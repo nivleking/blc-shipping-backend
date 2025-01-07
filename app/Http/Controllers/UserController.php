@@ -2,36 +2,37 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Admin;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 
-class AdminController extends Controller
+class UserController extends Controller
 {
     public function register(Request $request)
     {
         $validated = $request->validate([
-            'username' => 'required|string|max:255|unique:admins',
-            'email' => 'required|string|email|unique:admins',
+            'username' => 'required|string|max:255|unique:users',
+            'email' => 'required|string|email|unique:users',
             'password' => 'required|string|confirmed',
         ]);
 
-        $admin = Admin::create($validated);
-        return response()->json($admin, 201);
+        $user = User::create($validated);
+
+        return response()->json($user, 201);
     }
 
     public function login(Request $request)
     {
         $validated = $request->validate([
-            'username' => 'required|exists:admins',
+            'username' => 'required|exists:users',
             'password' => 'required'
         ]);
 
-        $admin = Admin::where('username', $request->username)->first();
+        $user = User::where('username', $request->username)->first();
 
         if (
-            !$admin ||
-            !Hash::check($request->password, $admin->password)
+            !$user ||
+            !Hash::check($request->password, $user->password)
         ) {
             return response()->json([
                 'errors' => [
@@ -42,14 +43,14 @@ class AdminController extends Controller
             ], 401);
         }
 
-        $token = $admin->createToken('admin-token')->plainTextToken;
+        $token = $user->createToken('user-token')->plainTextToken;
         return response()->json(['token' => $token], 200);
     }
 
     public function logout(Request $request)
     {
         $user = $request->user();
-        if ($user instanceof Admin) {
+        if ($user instanceof User) {
             $user->tokens()->delete();
             return response()->json(['message' => 'Logged out'], 200);
         }
@@ -57,9 +58,9 @@ class AdminController extends Controller
         return response()->json(['message' => 'Unauthorized'], 401);
     }
 
-    public function getAllAdmins()
+    public function getAllUsers()
     {
-        $admins = Admin::all();
+        $admins = User::all();
         return response()->json($admins);
     }
 }

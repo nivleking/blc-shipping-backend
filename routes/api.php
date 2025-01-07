@@ -43,4 +43,5 @@ Route::apiResource('room', RoomController::class)->middleware('auth:sanctum');
 // Other Room Routes
 Route::get('room/{room}/users', [RoomController::class, 'getRoomUsers'])->middleware('auth:sanctum');
 Route::post('room/{room}/join', [RoomController::class, 'joinRoom'])->middleware('auth:sanctum');
+Route::post('room/{room}/leave', [RoomController::class, 'leaveRoom'])->middleware('auth:sanctum');
 Route::delete('room/{room}/kick/{user}', [RoomController::class, 'kickUser'])->middleware('auth:sanctum');

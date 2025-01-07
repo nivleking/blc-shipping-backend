@@ -52,8 +52,8 @@ class UserController extends Controller
     public function logout(Request $request)
     {
         $user = $request->user();
-
-        return response()->json(['message' => 'Unauthorized'], 401);
+        $user->tokens()->delete();
+        return response()->json(['message' => 'Logged out'], 200);
     }
 
     public function getAllUsers()

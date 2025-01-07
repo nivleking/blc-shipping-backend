@@ -106,6 +106,23 @@ class RoomController extends Controller
         return response()->json($room);
     }
 
+    public function leaveRoom(Request $request, Room $room)
+    {
+        $user = $request->user();
+        if ($user->is_admin) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $users = json_decode($room->users, true);
+        if (($key = array_search($user->id, $users)) !== false) {
+            unset($users[$key]);
+            $room->users = json_encode(array_values($users));
+            $room->save();
+        }
+
+        return response()->json($room);
+    }
+
     public function kickUser(Request $request, Room $room, User $user)
     {
         $admin = $request->user();

@@ -23,7 +23,7 @@ class RoomController extends Controller
     public function index(Request $request)
     {
         $admin = $request->user();
-        if (!$admin instanceof Admin) {
+        if (!$admin->is_admin) {
             return response()->json(['message' => 'Unauthorized'], 401);
         }
 
@@ -34,7 +34,7 @@ class RoomController extends Controller
     public function store(Request $request)
     {
         $admin = $request->user();
-        if (!$admin instanceof Admin) {
+        if (!$admin->is_admin) {
             return response()->json(['message' => 'Unauthorized'], 401);
         }
 
@@ -63,7 +63,7 @@ class RoomController extends Controller
     public function update(Request $request, Room $room)
     {
         $admin = $request->user();
-        if (!$admin instanceof Admin) {
+        if (!$admin->is_admin) {
             return response()->json(['message' => 'Unauthorized'], 401);
         }
 
@@ -80,7 +80,7 @@ class RoomController extends Controller
     public function destroy(Request $request, Room $room)
     {
         $admin = $request->user();
-        if (!$admin instanceof Admin) {
+        if (!$admin->is_admin) {
             return response()->json(['message' => 'Unauthorized'], 401);
         }
 
@@ -94,7 +94,7 @@ class RoomController extends Controller
     public function joinRoom(Request $request, Room $room)
     {
         $user = $request->user();
-        if (!$user instanceof User) {
+        if ($user->is_admin) {
             return response()->json(['message' => 'Unauthorized'], 401);
         }
 
@@ -109,7 +109,7 @@ class RoomController extends Controller
     public function kickUser(Request $request, Room $room, User $user)
     {
         $admin = $request->user();
-        if (!$admin instanceof Admin) {
+        if (!$admin->is_admin) {
             return response()->json(['message' => 'Unauthorized'], 401);
         }
 

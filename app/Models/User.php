@@ -12,39 +12,32 @@ class User extends Authenticatable
 {
     use HasApiTokens, HasFactory, Notifiable;
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var array<int, string>
-     */
     protected $fillable = [
         'name',
         'email',
+        'is_admin',
         'password',
     ];
 
-    /**
-     * The attributes that should be hidden for serialization.
-     *
-     * @var array<int, string>
-     */
     protected $hidden = [
         'password',
         'remember_token',
     ];
 
-    /**
-     * The attributes that should be cast.
-     *
-     * @var array<string, string>
-     */
     protected $casts = [
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
     ];
 
+    // Relasi untuk rooms yang diikuti oleh user
     public function rooms()
     {
         return $this->belongsToMany(Room::class);
+    }
+
+    // Relasi untuk rooms yang dibuat oleh user (admin)
+    public function createdRooms()
+    {
+        return $this->hasMany(Room::class, 'admin_id');
     }
 }

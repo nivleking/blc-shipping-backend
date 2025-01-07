@@ -20,13 +20,15 @@ class Room extends Model
         'users',
     ];
 
-    public function admin()
-    {
-        return $this->belongsTo(Admin::class);
-    }
-
+    // Relasi untuk users yang bergabung ke dalam room
     public function users()
     {
-        return $this->hasMany(User::class);
+        return $this->belongsToMany(User::class);
+    }
+
+    // Relasi untuk admin yang membuat room
+    public function admin()
+    {
+        return $this->belongsTo(User::class, 'admin_id');
     }
 }

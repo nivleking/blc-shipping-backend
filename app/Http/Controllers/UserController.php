@@ -11,8 +11,9 @@ class UserController extends Controller
     public function register(Request $request)
     {
         $validated = $request->validate([
-            'username' => 'required|string|max:255|unique:users',
+            'name' => 'required|string|max:255|unique:users',
             'email' => 'required|string|email|unique:users',
+            'is_admin' => 'required',
             'password' => 'required|string|confirmed',
         ]);
 
@@ -24,11 +25,11 @@ class UserController extends Controller
     public function login(Request $request)
     {
         $validated = $request->validate([
-            'username' => 'required|exists:users',
+            'name' => 'required|exists:users',
             'password' => 'required'
         ]);
 
-        $user = User::where('username', $request->username)->first();
+        $user = User::where('name', $request->name)->first();
 
         if (
             !$user ||
@@ -36,31 +37,34 @@ class UserController extends Controller
         ) {
             return response()->json([
                 'errors' => [
-                    'username' => [
+                    'name' => [
                         'The provided credentials are incorrect.',
                     ]
                 ]
             ], 401);
         }
 
-        $token = $user->createToken('user-token')->plainTextToken;
+        $prefix = $user->is_admin ? 'admin' : 'user';
+        $token = $user->createToken("{$prefix}-token")->plainTextToken;
         return response()->json(['token' => $token], 200);
     }
 
     public function logout(Request $request)
     {
         $user = $request->user();
-        if ($user instanceof User) {
-            $user->tokens()->delete();
-            return response()->json(['message' => 'Logged out'], 200);
-        }
 
         return response()->json(['message' => 'Unauthorized'], 401);
     }
 
     public function getAllUsers()
     {
-        $admins = User::all();
+        $admins = User::where('is_admin', false)->get();
+        return response()->json($admins);
+    }
+
+    public function getAllAdmins()
+    {
+        $admins = User::where('is_admin', true)->get();
         return response()->json($admins);
     }
 }

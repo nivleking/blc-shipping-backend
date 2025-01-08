@@ -1,7 +1,7 @@
 <?php
 
-use App\Http\Controllers\AdminController;
 use App\Http\Controllers\RoomController;
+use App\Http\Controllers\SalesCallCardController;
 use App\Http\Controllers\UserController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -28,7 +28,7 @@ Route::get('/user', function (Request $request) {
 Route::get('all-users', [UserController::class, 'getAllUsers']);
 Route::get('all-admins', [UserController::class, 'getAllAdmins']);
 
-// User Routes
+// User and Admin Routes
 Route::prefix('user')->group(
     function () {
         Route::post('/register', [UserController::class, 'register']);
@@ -45,3 +45,6 @@ Route::get('room/{room}/users', [RoomController::class, 'getRoomUsers'])->middle
 Route::post('room/{room}/join', [RoomController::class, 'joinRoom'])->middleware('auth:sanctum');
 Route::post('room/{room}/leave', [RoomController::class, 'leaveRoom'])->middleware('auth:sanctum');
 Route::delete('room/{room}/kick/{user}', [RoomController::class, 'kickUser'])->middleware('auth:sanctum');
+
+// Admin - Sales Call Routes
+Route::apiResource('sales-call-card', SalesCallCardController::class);

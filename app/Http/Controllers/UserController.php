@@ -6,10 +6,16 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 
+// TODO: perbaiki semua return responsenya karena masih belum rapi
 class UserController extends Controller
 {
     public function register(Request $request)
     {
+        $admin = $request->user();
+        if (!$admin->is_admin) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
         $validated = $request->validate([
             'name' => 'required|string|max:255|unique:users',
             'email' => 'required|string|email|unique:users',
@@ -54,6 +60,25 @@ class UserController extends Controller
         $user = $request->user();
         $user->currentAccessToken()->delete();
         return response()->json(['message' => 'Logged out'], 200);
+    }
+
+    public function update(Request $request, User $user)
+    {
+        $validated = $request->validate([
+            'name' => 'string|max:255|unique:users',
+            'email' => 'string|email|unique:users',
+            'password' => 'string|confirmed',
+        ]);
+
+        $user->update($validated);
+
+        return response()->json($user, 200);
+    }
+
+    public function destroy(User $user)
+    {
+        $user->delete();
+        return response()->json("Deleted", 204);
     }
 
     public function getAllUsers()

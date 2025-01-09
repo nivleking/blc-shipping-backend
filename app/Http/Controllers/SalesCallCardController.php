@@ -2,8 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Requests\StoreSalesCallCardRequest;
-use App\Http\Requests\UpdateSalesCallCardRequest;
 use App\Models\SalesCallCard;
 use Illuminate\Http\Request;
 
@@ -60,16 +58,10 @@ class SalesCallCardController extends Controller
         return response()->json(null, 204);
     }
 
-    public function generateSalesCallCards(Request $request)
+    public function generate()
     {
-        $validated = $request->validate([
-            'maximum_revenue' => 'required|integer',
-            'maximum_quantity' => 'required|integer',
-            'total_sales_call_cards' => 'required|integer',
-            'ports' => 'required|array',
-            'std_dev_revenue' => 'required|numeric',
-            'std_dev_quantity' => 'required|numeric',
-        ]);
+        // Delete all Sales Call Cards
+        SalesCallCard::truncate();
 
         $maxTotalRevenueEachPort = 250000000;
         $maxTotalContainerQuantityEachPort = 15;
@@ -142,13 +134,12 @@ class SalesCallCardController extends Controller
                 $priority = rand(0, 1) ? "committed" : "non-committed";
 
                 $salesCall = [
-                    'id' => $id,
+                    'type' => $containerType,
+                    'priority' => $priority,
+                    'origin' => $originPort,
+                    'destination' => $destinationPort,
                     'quantity' => $quantity,
                     'revenue' => $totalRevenue,
-                    'priority' => $priority,
-                    'containerType' => $containerType,
-                    'originPort' => $originPort,
-                    'destinationPort' => $destinationPort,
                 ];
                 $salesCalls[] = $salesCall;
 
@@ -160,48 +151,15 @@ class SalesCallCardController extends Controller
             }
         }
 
-        // After generating the sales calls and before final output, distribute the remaining revenue and quantity more evenly
-        foreach ($ports as $port) {
-            $currentRevenue = $revenuePerPort[$port];
-            $currentQuantity = $quantityPerPort[$port];
-
-            $remainingRevenue = $maxTotalRevenueEachPort - $currentRevenue;
-            $remainingQuantity = $maxTotalContainerQuantityEachPort - $currentQuantity;
-
-            $portCalls = array_filter($salesCalls, fn($call) => $call['originPort'] == $port);
-            $eligibleCalls = array_filter($portCalls, fn($call) => $call['quantity'] > 1);
-
-            // Distribute remaining revenue to eligible calls
-            $revenuePerEligibleCall = intdiv($remainingRevenue, count($eligibleCalls));
-            foreach ($eligibleCalls as &$call) {
-                $call['revenue'] += $revenuePerEligibleCall;
-                $revenuePerPort[$port] += $revenuePerEligibleCall;
-            }
-
-            // Adjust quantities for the call with the smallest quantity if needed
-            if ($remainingQuantity != 0) {
-                $minQuantityCall = array_reduce($portCalls, fn($minCall, $call) => $call['quantity'] < $minCall['quantity'] ? $call : $minCall);
-                $minQuantityCall['quantity'] += $remainingQuantity;
-                $quantityPerPort[$port] = $maxTotalContainerQuantityEachPort;
-            }
+        // Save generated sales calls to the database
+        foreach ($salesCalls as $salesCall) {
+            SalesCallCard::create($salesCall);
         }
 
-        foreach ($ports as $port) {
-            $currentRevenue = $revenuePerPort[$port];
-            $remainingRevenue = $maxTotalRevenueEachPort - $currentRevenue;
+        // Return all sales call cards
+        $allSalesCallCards = SalesCallCard::all();
 
-            if ($remainingRevenue > 0) {
-                foreach ($salesCalls as &$call) {
-                    if ($call['originPort'] == $port) {
-                        $call['revenue'] += $remainingRevenue;
-                        $revenuePerPort[$port] += $remainingRevenue;
-                        break;
-                    }
-                }
-            }
-        }
-
-        return response()->json($salesCalls, 200);
+        return response()->json($allSalesCallCards, 200);
     }
 
     private function randomGaussian()

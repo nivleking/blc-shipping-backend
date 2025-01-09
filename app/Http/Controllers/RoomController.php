@@ -20,23 +20,14 @@ class RoomController extends Controller
         return response()->json($users);
     }
 
-    public function index(Request $request)
+    public function index()
     {
-        $admin = $request->user();
-        if (!$admin->is_admin) {
-            return response()->json(['message' => 'Unauthorized'], 401);
-        }
-
         $rooms = Room::all();
         return response()->json($rooms);
     }
 
     public function store(Request $request)
     {
-        $admin = $request->user();
-        if (!$admin->is_admin) {
-            return response()->json(['message' => 'Unauthorized'], 401);
-        }
 
         $validated = $request->validate([
             'id' => 'required|string|unique:rooms',
@@ -44,6 +35,7 @@ class RoomController extends Controller
             'description' => 'string',
         ]);
 
+        $admin = $request->user();
         $room = Room::create([
             'id' => $validated['id'],
             'admin_id' => $admin->id,
@@ -62,11 +54,6 @@ class RoomController extends Controller
 
     public function update(Request $request, Room $room)
     {
-        $admin = $request->user();
-        if (!$admin->is_admin) {
-            return response()->json(['message' => 'Unauthorized'], 401);
-        }
-
         $validated = $request->validate([
             'name' => 'string',
             'description' => 'string',
@@ -79,11 +66,6 @@ class RoomController extends Controller
 
     public function destroy(Request $request, Room $room)
     {
-        $admin = $request->user();
-        if (!$admin->is_admin) {
-            return response()->json(['message' => 'Unauthorized'], 401);
-        }
-
         $room->delete();
         return response()->json(
             ['message' => 'Room deleted successfully'],
@@ -94,10 +76,6 @@ class RoomController extends Controller
     public function joinRoom(Request $request, Room $room)
     {
         $user = $request->user();
-        if ($user->is_admin) {
-            return response()->json(['message' => 'Unauthorized'], 401);
-        }
-
         $users = json_decode($room->users, true);
         $users[] = $user->id;
         $room->users = json_encode($users);
@@ -109,10 +87,6 @@ class RoomController extends Controller
     public function leaveRoom(Request $request, Room $room)
     {
         $user = $request->user();
-        if ($user->is_admin) {
-            return response()->json(['message' => 'Unauthorized'], 401);
-        }
-
         $users = json_decode($room->users, true);
         if (($key = array_search($user->id, $users)) !== false) {
             unset($users[$key]);
@@ -125,11 +99,6 @@ class RoomController extends Controller
 
     public function kickUser(Request $request, Room $room, User $user)
     {
-        $admin = $request->user();
-        if (!$admin->is_admin) {
-            return response()->json(['message' => 'Unauthorized'], 401);
-        }
-
         $users = json_decode($room->users, true);
         if (($key = array_search($user->id, $users)) !== false) {
             unset($users[$key]);

@@ -31,20 +31,29 @@ Route::get('all-admins', [UserController::class, 'getAllAdmins']);
 // User and Admin Routes
 Route::prefix('user')->group(
     function () {
-        Route::post('/register', [UserController::class, 'register']);
+        Route::post('/register', [UserController::class, 'register'])->middleware('auth:sanctum');
         Route::post('/login', [UserController::class, 'login']);
         Route::post('/logout', [UserController::class, 'logout'])->middleware('auth:sanctum');
+        Route::put('/{user}', [UserController::class, 'update'])->middleware(['auth:sanctum', 'admin']);
+        Route::delete('/{user}', [UserController::class, 'destroy'])->middleware(['auth:sanctum', 'admin']);
     }
 );
 
+// Admin - Sales Call Routes
+Route::apiResource('sales-call-card', SalesCallCardController::class);
+Route::get('generate-sales-call-cards', [SalesCallCardController::class, 'generate']);
+
 // Basic Room Routes
-Route::apiResource('room', RoomController::class)->middleware('auth:sanctum');
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('room', [RoomController::class, 'index'])->middleware('admin');
+    Route::post('room', [RoomController::class, 'store'])->middleware('admin');
+    Route::get('room/{room}', [RoomController::class, 'show']);
+    Route::put('room/{room}', [RoomController::class, 'update'])->middleware('admin');
+    Route::delete('room/{room}', [RoomController::class, 'destroy'])->middleware('admin');
+});
 
 // Other Room Routes
 Route::get('room/{room}/users', [RoomController::class, 'getRoomUsers'])->middleware('auth:sanctum');
-Route::post('room/{room}/join', [RoomController::class, 'joinRoom'])->middleware('auth:sanctum');
-Route::post('room/{room}/leave', [RoomController::class, 'leaveRoom'])->middleware('auth:sanctum');
-Route::delete('room/{room}/kick/{user}', [RoomController::class, 'kickUser'])->middleware('auth:sanctum');
-
-// Admin - Sales Call Routes
-Route::apiResource('sales-call-card', SalesCallCardController::class);
+Route::post('room/{room}/join', [RoomController::class, 'joinRoom'])->middleware('auth:sanctum', 'user');
+Route::post('room/{room}/leave', [RoomController::class, 'leaveRoom'])->middleware('auth:sanctum', 'user');
+Route::delete('room/{room}/kick/{user}', [RoomController::class, 'kickUser'])->middleware('auth:sanctum', 'admin');

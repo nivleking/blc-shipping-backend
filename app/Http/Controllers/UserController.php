@@ -62,6 +62,11 @@ class UserController extends Controller
         return response()->json(['message' => 'Logged out'], 200);
     }
 
+    public function show(User $user)
+    {
+        return response()->json($user, 200);
+    }
+
     public function update(Request $request, User $user)
     {
         $validated = $request->validate([

@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\RoomController;
 use App\Http\Controllers\SalesCallCardController;
+use App\Http\Controllers\SalesCallCardDeckController;
 use App\Http\Controllers\UserController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -34,14 +35,20 @@ Route::prefix('user')->group(
         Route::post('/register', [UserController::class, 'register'])->middleware('auth:sanctum');
         Route::post('/login', [UserController::class, 'login']);
         Route::post('/logout', [UserController::class, 'logout'])->middleware('auth:sanctum');
+        Route::get('/{user}', [UserController::class, 'show'])->middleware('auth:sanctum', 'admin');
         Route::put('/{user}', [UserController::class, 'update'])->middleware(['auth:sanctum', 'admin']);
         Route::delete('/{user}', [UserController::class, 'destroy'])->middleware(['auth:sanctum', 'admin']);
     }
 );
 
-// Admin - Sales Call Routes
-Route::apiResource('sales-call-card', SalesCallCardController::class);
+// Admin - Card Routes
+Route::apiResource('sales-call-cards', SalesCallCardController::class);
 Route::get('generate-sales-call-cards', [SalesCallCardController::class, 'generate']);
+
+// Admin - Deck Routes
+Route::apiResource('sales-call-card-decks', SalesCallCardDeckController::class);
+Route::post('sales-call-card-decks/{deck}/add-card', [SalesCallCardDeckController::class, 'addSalesCallCard']);
+Route::delete('sales-call-card-decks/{deck}/remove-card/{salesCallCard}', [SalesCallCardDeckController::class, 'removeSalesCallCard']);
 
 // Basic Room Routes
 Route::middleware('auth:sanctum')->group(function () {

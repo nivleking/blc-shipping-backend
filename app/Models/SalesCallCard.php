@@ -15,7 +15,7 @@ class SalesCallCard extends Model
         'origin',
         'destination',
         'quantity',
-        'revenue',
+        'revenue'
     ];
 
     protected $hidden = [
@@ -27,4 +27,9 @@ class SalesCallCard extends Model
         'quantity' => 'integer',
         'revenue' => 'integer',
     ];
+
+    public function decks()
+    {
+        return $this->belongsToMany(SalesCallCardDeck::class, 'card_deck', 'card_id', 'deck_id');
+    }
 }

@@ -9,9 +9,7 @@ class SalesCallCardController extends Controller
 {
     public function index()
     {
-        $salesCallCards = SalesCallCard::all();
-
-        return response()->json($salesCallCards, 200);
+        return SalesCallCard::with('decks')->get();
     }
 
     public function store(Request $request)

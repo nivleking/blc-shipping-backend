@@ -59,7 +59,9 @@ class SalesCallCardController extends Controller
     public function generate()
     {
         // Delete all Sales Call Cards
-        SalesCallCard::truncate();
+        if (SalesCallCard::count() > 0) {
+            SalesCallCard::truncate();
+        }
 
         $maxTotalRevenueEachPort = 250000000;
         $maxTotalContainerQuantityEachPort = 15;
@@ -150,8 +152,16 @@ class SalesCallCardController extends Controller
         }
 
         // Save generated sales calls to the database
-        foreach ($salesCalls as $salesCall) {
-            SalesCallCard::create($salesCall);
+        foreach ($salesCalls as $salesCallData) {
+            $salesCall = SalesCallCard::create($salesCallData);
+
+            // Generate Containers for this Sales Call Card
+            for ($i = 0; $i < $salesCall->quantity; $i++) {
+                $color = $this->generateContainerColor($salesCall->destination); // Tentukan warna berdasarkan destination
+                $salesCall->containers()->create([
+                    'color' => $color,
+                ]);
+            }
         }
 
         // Return all sales call cards
@@ -165,5 +175,17 @@ class SalesCallCardController extends Controller
         $u = mt_rand() / mt_getrandmax();
         $v = mt_rand() / mt_getrandmax();
         return sqrt(-2 * log($u)) * cos(2 * pi() * $v);
+    }
+
+    private function generateContainerColor($destination)
+    {
+        $colorMap = [
+            'SBY' => 'blue',
+            'MKS' => 'red',
+            'MDN' => 'green',
+            'JYP' => 'yellow',
+        ];
+
+        return $colorMap[$destination] ?? 'gray';
     }
 }

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ContainerController;
 use App\Http\Controllers\RoomController;
 use App\Http\Controllers\SalesCallCardController;
 use App\Http\Controllers\SalesCallCardDeckController;
@@ -41,14 +42,17 @@ Route::prefix('user')->group(
     }
 );
 
-// Admin - Card Routes
-Route::apiResource('sales-call-cards', SalesCallCardController::class);
-Route::get('generate-sales-call-cards', [SalesCallCardController::class, 'generate']);
-
 // Admin - Deck Routes
 Route::apiResource('sales-call-card-decks', SalesCallCardDeckController::class);
 Route::post('sales-call-card-decks/{deck}/add-card', [SalesCallCardDeckController::class, 'addSalesCallCard']);
 Route::delete('sales-call-card-decks/{deck}/remove-card/{salesCallCard}', [SalesCallCardDeckController::class, 'removeSalesCallCard']);
+
+// Admin - Card Routes
+Route::apiResource('sales-call-cards', SalesCallCardController::class);
+Route::get('generate-sales-call-cards', [SalesCallCardController::class, 'generate']);
+
+//Admin - Container Routes
+Route::apiResource('containers', ContainerController::class);
 
 // Basic Room Routes
 Route::middleware('auth:sanctum')->group(function () {

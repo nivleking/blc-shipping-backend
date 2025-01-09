@@ -32,4 +32,9 @@ class SalesCallCard extends Model
     {
         return $this->belongsToMany(SalesCallCardDeck::class, 'card_deck', 'card_id', 'deck_id');
     }
+
+    public function containers()
+    {
+        return $this->hasMany(Container::class);
+    }
 }

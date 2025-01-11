@@ -16,6 +16,7 @@ return new class extends Migration
             $table->foreignId('admin_id')->constrained('users')->cascadeOnDelete();
             $table->string('name');
             $table->text('description');
+            $table->string('status')->default('created');
             $table->json('users')->nullable();
             $table->timestamps();
         });

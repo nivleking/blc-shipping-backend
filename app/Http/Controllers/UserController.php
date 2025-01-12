@@ -4,9 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 
-// TODO: perbaiki semua return responsenya karena masih belum rapi
 class UserController extends Controller
 {
     public function register(Request $request)
@@ -61,6 +61,38 @@ class UserController extends Controller
         $user->currentAccessToken()->delete();
         return response()->json(['message' => 'Logged out'], 200);
     }
+
+    // public function sessionLogin(Request $request)
+    // {
+    //     $credentials = $request->validate([
+    //         'name' => 'required|exists:users',
+    //         'password' => 'required'
+    //     ]);
+
+    //     if (!Auth::attempt($credentials)) {
+    //         return response()->json([
+    //             'errors' => [
+    //                 'name' => [
+    //                     'The provided credentials are incorrect.',
+    //                 ]
+    //             ]
+    //         ], 401);
+    //     }
+
+    //     $request->session()->regenerate();
+
+    //     return response()->json(['message' => 'Logged in successfully'], 200);
+    // }
+
+    // public function sessionLogout(Request $request)
+    // {
+    //     Auth::guard('web')->logout();
+
+    //     $request->session()->invalidate();
+    //     $request->session()->regenerateToken();
+
+    //     return response()->json(['message' => 'Logged out'], 200);
+    // }
 
     public function show(User $user)
     {

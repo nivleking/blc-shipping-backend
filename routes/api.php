@@ -31,17 +31,22 @@ Route::get('/user', function (Request $request) {
 Route::get('all-users', [UserController::class, 'getAllUsers']);
 Route::get('all-admins', [UserController::class, 'getAllAdmins']);
 
-// User and Admin Routes
-Route::prefix('user')->group(
-    function () {
-        Route::post('/register', [UserController::class, 'register'])->middleware('auth:sanctum');
-        Route::post('/login', [UserController::class, 'login']);
-        Route::post('/logout', [UserController::class, 'logout'])->middleware('auth:sanctum');
-        Route::get('/{user}', [UserController::class, 'show'])->middleware('auth:sanctum');
-        Route::put('/{user}', [UserController::class, 'update'])->middleware(['auth:sanctum', 'admin']);
-        Route::delete('/{user}', [UserController::class, 'destroy'])->middleware(['auth:sanctum', 'admin']);
-    }
-);
+// Token-Based Authentication Routes
+
+// Session-Based Authentication Routes
+// Route::middleware('web')->group(function () {
+    //     Route::post('user/session-login', [UserController::class, 'sessionLogin']);
+    //     Route::post('user/session-logout', [UserController::class, 'sessionLogout']);
+    // });
+
+Route::post('user/login', [UserController::class, 'login']);
+Route::post('user/logout', [UserController::class, 'logout']);
+Route::post('user/register', [UserController::class, 'register'])->middleware('auth:sanctum', 'admin');
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('user/{user}', [UserController::class, 'show']);
+    Route::put('user/{user}', [UserController::class, 'update'])->middleware('admin');
+    Route::delete('user/{user}', [UserController::class, 'destroy'])->middleware('admin');
+});
 
 // Admin - Deck Routes
 Route::apiResource('sales-call-card-decks', SalesCallCardDeckController::class);

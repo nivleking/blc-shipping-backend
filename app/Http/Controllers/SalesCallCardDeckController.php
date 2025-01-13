@@ -8,6 +8,12 @@ use Illuminate\Http\Request;
 
 class SalesCallCardDeckController extends Controller
 {
+
+    public function showByDeck(SalesCallCardDeck $deck)
+    {
+        return response()->json($deck->load('cards'), 200);
+    }
+
     public function index()
     {
         return SalesCallCardDeck::with('cards')->get();
@@ -17,7 +23,6 @@ class SalesCallCardDeckController extends Controller
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'description' => 'nullable|string',
         ]);
 
         $deck = SalesCallCardDeck::create($validated);
@@ -33,7 +38,6 @@ class SalesCallCardDeckController extends Controller
     {
         $validated = $request->validate([
             'name' => 'string|max:255',
-            'description' => 'nullable|string',
         ]);
 
         $deck->update($validated);

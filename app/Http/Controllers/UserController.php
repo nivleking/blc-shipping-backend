@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
@@ -28,6 +29,38 @@ class UserController extends Controller
         return response()->json($user, 201);
     }
 
+    public function refreshToken(Request $request)
+    {
+        $refreshToken = $request->bearerToken();
+        $token = $request->user()->tokens()->where('id', $refreshToken)->first();
+
+        if (
+            !$token ||
+            $token->expires_at <= Carbon::now()
+        ) {
+            return response()->json(['message' => 'Refresh token expired or invalid'], 401);
+        }
+
+        $token->delete();
+
+        $accessToken = $request->user()->createToken(
+            'access_token',
+            ['access-api'],
+            Carbon::now()->addMinutes(config('sanctum.ac_expiration'))
+        );
+
+        $newRefreshToken = $request->user()->createToken(
+            'refresh_token',
+            ['issue-access-token'],
+            Carbon::now()->addMinutes(config('sanctum.rt_expiration'))
+        );
+
+        return response()->json([
+            'token' => $accessToken->plainTextToken,
+            'refresh_token' => $newRefreshToken->plainTextToken,
+        ], 200);
+    }
+
     public function login(Request $request)
     {
         $validated = $request->validate([
@@ -50,15 +83,28 @@ class UserController extends Controller
             ], 401);
         }
 
-        $prefix = $user->is_admin ? 'admin' : 'user';
-        $token = $user->createToken("{$prefix}-token")->plainTextToken;
-        return response()->json(['token' => $token], 200);
+        $accessToken = $user->createToken(
+            'access_token',
+            ['access-api'],
+            Carbon::now()->addMinutes(config('sanctum.ac_expiration'))
+        );
+        $refreshToken = $user->createToken(
+            'refresh_token',
+            ['issue-access-token'],
+            Carbon::now()->addMinutes(config('sanctum.rt_expiration'))
+        );
+
+        return response()->json([
+            'is_admin' => $user->is_admin,
+            'token' => $accessToken->plainTextToken,
+            'refresh_token' => $refreshToken->plainTextToken,
+        ], 200);
     }
 
     public function logout(Request $request)
     {
         $user = $request->user();
-        $user->currentAccessToken()->delete();
+        $user->tokens()->delete();
         return response()->json(['message' => 'Logged out'], 200);
     }
 

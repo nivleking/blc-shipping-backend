@@ -15,7 +15,7 @@ class UserSeeder extends Seeder
     {
         $user = new User();
         $user->name = 'user1';
-        $user->email = 'user@mail.com';
+        $user->email = 'user1@mail.com';
         $user->is_admin = false;
         $user->password = bcrypt('12');
         $user->save();
@@ -23,6 +23,20 @@ class UserSeeder extends Seeder
         $user = new User();
         $user->name = 'user2';
         $user->email = 'user2@mail.com';
+        $user->is_admin = false;
+        $user->password = bcrypt('12');
+        $user->save();
+
+        $user = new User();
+        $user->name = 'user3';
+        $user->email = 'user3@mail.com';
+        $user->is_admin = false;
+        $user->password = bcrypt('12');
+        $user->save();
+
+        $user = new User();
+        $user->name = 'user4';
+        $user->email = 'user4@mail.com';
         $user->is_admin = false;
         $user->password = bcrypt('12');
         $user->save();

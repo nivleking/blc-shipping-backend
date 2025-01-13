@@ -7,6 +7,7 @@ use App\Http\Controllers\SalesCallCardDeckController;
 use App\Http\Controllers\ShipBayController;
 use App\Http\Controllers\UserController;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -24,42 +25,60 @@ Route::get('/', function () {
     return response()->json(['message' => 'Hello World!']);
 });
 
-Route::get('/user', function (Request $request) {
-    return $request->user();
-})->middleware('auth:sanctum');
+Route::get('/clear-cache', function () {
+    Artisan::call('cache:clear');
+    Artisan::call('route:clear');
+    Artisan::call('config:clear');
+    Artisan::call('view:clear');
+    return "Cache is cleared";
+});
 
 Route::get('all-users', [UserController::class, 'getAllUsers']);
 Route::get('all-admins', [UserController::class, 'getAllAdmins']);
 
-// Token-Based Authentication Routes
-
 // Session-Based Authentication Routes
 // Route::middleware('web')->group(function () {
-    //     Route::post('user/session-login', [UserController::class, 'sessionLogin']);
-    //     Route::post('user/session-logout', [UserController::class, 'sessionLogout']);
-    // });
+//     Route::post('user/session-login', [UserController::class, 'sessionLogin']);
+//     Route::post('user/session-logout', [UserController::class, 'sessionLogout']);
+// });
 
+
+// Token-Based Authentication Routes
 Route::post('user/login', [UserController::class, 'login']);
-Route::post('user/logout', [UserController::class, 'logout']);
-Route::post('user/register', [UserController::class, 'register'])->middleware('auth:sanctum', 'admin');
+
+// Issue Access Token
 Route::middleware('auth:sanctum')->group(function () {
+    Route::get('user/refresh-token', [UserController::class, 'refreshToken']);
+});
+
+// Access API
+Route::middleware('auth:sanctum', 'ability:access-api')->group(function () {
+    Route::get('/user', function (Request $request) {
+        return $request->user();
+    });
+});
+
+Route::middleware('auth:sanctum')->group(function () {
+    Route::post('user/register', [UserController::class, 'register'])->middleware('admin');
+    Route::post('user/logout', [UserController::class, 'logout']);
     Route::get('user/{user}', [UserController::class, 'show']);
     Route::put('user/{user}', [UserController::class, 'update'])->middleware('admin');
     Route::delete('user/{user}', [UserController::class, 'destroy'])->middleware('admin');
 });
 
-// Admin - Deck Routes
-Route::apiResource('sales-call-card-decks', SalesCallCardDeckController::class);
-Route::post('sales-call-card-decks/{deck}/add-card', [SalesCallCardDeckController::class, 'addSalesCallCard']);
-Route::delete('sales-call-card-decks/{deck}/remove-card/{salesCallCard}', [SalesCallCardDeckController::class, 'removeSalesCallCard']);
-
 Route::get('moveDragMe', function () {
     return response()->json(['message' => 'Drag me to the right place!']);
 });
 
+// Admin - Deck Routes
+Route::apiResource('decks', SalesCallCardDeckController::class);
+Route::post('decks/{deck}/add-card', [SalesCallCardDeckController::class, 'addSalesCallCard']);
+Route::delete('decks/{deck}/remove-card/{salesCallCard}', [SalesCallCardDeckController::class, 'removeSalesCallCard']);
+Route::get('decks/{deck}/cards', [SalesCallCardDeckController::class, 'showByDeck']);
+
 // Admin - Card Routes
-Route::apiResource('sales-call-cards', SalesCallCardController::class);
-Route::get('generate-sales-call-cards', [SalesCallCardController::class, 'generate']);
+Route::apiResource('cards', SalesCallCardController::class);
+Route::post('generate-cards/{deck}', [SalesCallCardController::class, 'generate']);
 
 // Admin - Container Routes
 Route::apiResource('containers', ContainerController::class);

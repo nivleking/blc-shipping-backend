@@ -11,7 +11,6 @@ return new class extends Migration
         Schema::create('sales_call_card_decks', function (Blueprint $table) {
             $table->id();
             $table->string('name');
-            $table->text('description')->nullable();
             $table->timestamps();
         });
     }

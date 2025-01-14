@@ -36,28 +36,18 @@ Route::get('/clear-cache', function () {
 Route::get('all-users', [UserController::class, 'getAllUsers']);
 Route::get('all-admins', [UserController::class, 'getAllAdmins']);
 
-// Session-Based Authentication Routes
-// Route::middleware('web')->group(function () {
-//     Route::post('user/session-login', [UserController::class, 'sessionLogin']);
-//     Route::post('user/session-logout', [UserController::class, 'sessionLogout']);
-// });
-
-
-// Token-Based Authentication Routes
+// Token
 Route::post('user/login', [UserController::class, 'login']);
-
-// Issue Access Token
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('user/refresh-token', [UserController::class, 'refreshToken']);
 });
-
-// Access API
 Route::middleware('auth:sanctum', 'ability:access-api')->group(function () {
     Route::get('/user', function (Request $request) {
         return $request->user();
     });
 });
 
+// User Routes
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('user/register', [UserController::class, 'register'])->middleware('admin');
     Route::post('user/logout', [UserController::class, 'logout']);
@@ -66,15 +56,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('user/{user}', [UserController::class, 'destroy'])->middleware('admin');
 });
 
-Route::get('moveDragMe', function () {
-    return response()->json(['message' => 'Drag me to the right place!']);
-});
-
 // Admin - Deck Routes
 Route::apiResource('decks', SalesCallCardDeckController::class);
 Route::post('decks/{deck}/add-card', [SalesCallCardDeckController::class, 'addSalesCallCard']);
 Route::delete('decks/{deck}/remove-card/{salesCallCard}', [SalesCallCardDeckController::class, 'removeSalesCallCard']);
 Route::get('decks/{deck}/cards', [SalesCallCardDeckController::class, 'showByDeck']);
+Route::get('decks/{deck}/origins', [SalesCallCardDeckController::class, 'getOrigins']);
 
 // Admin - Card Routes
 Route::apiResource('cards', SalesCallCardController::class);
@@ -82,10 +69,6 @@ Route::post('generate-cards/{deck}', [SalesCallCardController::class, 'generate'
 
 // Admin - Container Routes
 Route::apiResource('containers', ContainerController::class);
-
-// ShipBay Routes
-Route::apiResource('ship-bays', ShipBayController::class);
-Route::get('ship-bays/{room}/{user}', [ShipBayController::class, 'showByUserAndRoom']);
 
 // Basic Room Routes
 Route::middleware('auth:sanctum')->group(function () {
@@ -102,3 +85,13 @@ Route::post('room/{room}/join', [RoomController::class, 'joinRoom'])->middleware
 Route::post('room/{room}/leave', [RoomController::class, 'leaveRoom'])->middleware('auth:sanctum', 'user');
 Route::delete('room/{room}/kick/{user}', [RoomController::class, 'kickUser'])->middleware('auth:sanctum', 'admin');
 Route::put('room/{room}/swap-bays', [RoomController::class, 'swapBays'])->middleware('auth:sanctum', 'admin');
+Route::get('room/{room}/deck-origins', [RoomController::class, 'getDeckOrigins'])->middleware('auth:sanctum');
+Route::put('room/{room}/set-ports', [RoomController::class, 'setPorts'])->middleware('auth:sanctum');
+Route::put('room/{room}/select-deck', [RoomController::class, 'selectDeck'])->middleware('auth:sanctum', 'admin');
+
+// ShipBay Routes
+Route::apiResource('ship-bays', ShipBayController::class);
+Route::get('ship-bays/{room}/{user}', [ShipBayController::class, 'showByUserAndRoom']);
+Route::get('moveDragMe', function () {
+    return response()->json(['message' => 'Drag me to the right place!']);
+});

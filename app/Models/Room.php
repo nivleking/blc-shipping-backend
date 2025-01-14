@@ -18,17 +18,23 @@ class Room extends Model
         'name',
         'description',
         'users',
+        'status',
+        'deck_id',
+        'max_users',
     ];
 
-    // Relasi untuk users yang bergabung ke dalam room
     public function users()
     {
         return $this->belongsToMany(User::class);
     }
 
-    // Relasi untuk admin yang membuat room
     public function admin()
     {
         return $this->belongsTo(User::class, 'admin_id');
+    }
+
+    public function deck()
+    {
+        return $this->belongsTo(SalesCallCardDeck::class);
     }
 }

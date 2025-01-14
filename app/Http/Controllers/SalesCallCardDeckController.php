@@ -8,15 +8,10 @@ use Illuminate\Http\Request;
 
 class SalesCallCardDeckController extends Controller
 {
-
-    public function showByDeck(SalesCallCardDeck $deck)
-    {
-        return response()->json($deck->load('cards'), 200);
-    }
-
     public function index()
     {
-        return SalesCallCardDeck::with('cards')->get();
+        $decks = SalesCallCardDeck::all();
+        return response()->json($decks);
     }
 
     public function store(Request $request)
@@ -31,7 +26,7 @@ class SalesCallCardDeckController extends Controller
 
     public function show(SalesCallCardDeck $deck)
     {
-        return response()->json($deck->load('salesCallCards'), 200);
+        return response()->json($deck->load('cards'), 200);
     }
 
     public function update(Request $request, SalesCallCardDeck $deck)
@@ -48,6 +43,17 @@ class SalesCallCardDeckController extends Controller
     {
         $deck->delete();
         return response()->json(null, 204);
+    }
+
+    public function showByDeck(SalesCallCardDeck $deck)
+    {
+        return response()->json($deck->load('cards'), 200);
+    }
+
+    public function getOrigins(SalesCallCardDeck $deck)
+    {
+        $origins = $deck->cards()->pluck('origin')->unique();
+        return response()->json($origins, 200);
     }
 
     public function addSalesCallCard(Request $request, SalesCallCardDeck $deck)

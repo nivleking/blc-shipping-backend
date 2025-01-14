@@ -13,10 +13,11 @@ return new class extends Migration
     {
         Schema::create('ship_bays', function (Blueprint $table) {
             $table->id();
+            $table->string('port');
             $table->json('arena');
             $table->foreignId('user_id')->constrained();
-            $table->string('room_id'); // Change to string
-            $table->foreign('room_id')->references('id')->on('rooms')->onDelete('cascade'); // Add foreign key constraint
+            $table->string('room_id');
+            $table->foreign('room_id')->references('id')->on('rooms')->onDelete('cascade');
             $table->timestamps();
         });
     }

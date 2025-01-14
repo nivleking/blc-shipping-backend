@@ -7,17 +7,11 @@ use Illuminate\Http\Request;
 
 class ShipBayController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
     public function index()
     {
         //
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
     public function store(Request $request)
     {
         $validatedData = $request->validate([
@@ -34,12 +28,19 @@ class ShipBayController extends Controller
         return response()->json(['message' => 'Ship bay saved successfully', 'shipBay' => $shipBay], 201);
     }
 
-    /**
-     * Display the specified resource.
-     */
     public function show(ShipBay $shipBay)
     {
         return response()->json($shipBay, 200);
+    }
+
+    public function update(Request $request, ShipBay $shipBay)
+    {
+        //
+    }
+
+    public function destroy(ShipBay $shipBay)
+    {
+        //
     }
 
     public function showByUserAndRoom($room, $user)
@@ -53,21 +54,5 @@ class ShipBayController extends Controller
         }
 
         return response()->json($shipBay, 200);
-    }
-
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, ShipBay $shipBay)
-    {
-        //
-    }
-
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(ShipBay $shipBay)
-    {
-        //
     }
 }

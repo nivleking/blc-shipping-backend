@@ -14,9 +14,11 @@ return new class extends Migration
         Schema::create('rooms', function (Blueprint $table) {
             $table->string('id')->primary();
             $table->foreignId('admin_id')->constrained('users')->cascadeOnDelete();
+            $table->foreignId('deck_id')->nullable()->constrained('sales_call_card_decks')->cascadeOnDelete();
             $table->string('name');
             $table->text('description');
             $table->string('status')->default('created');
+            $table->integer('max_users')->default(0);
             $table->json('users')->nullable();
             $table->timestamps();
         });

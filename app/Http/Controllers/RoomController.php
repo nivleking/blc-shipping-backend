@@ -2,53 +2,14 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Requests\StoreRoomRequest;
-use App\Http\Requests\UpdateRoomRequest;
-use App\Models\Admin;
 use App\Models\Room;
+use App\Models\SalesCallCardDeck;
 use App\Models\ShipBay;
 use App\Models\User;
 use Illuminate\Http\Request;
 
 class RoomController extends Controller
 {
-    public function swapBays(Request $request, Room $room)
-    {
-        // Retrieve the list of user IDs in the room
-        $userIds = json_decode($room->users, true);
-
-        if (count($userIds) < 2) {
-            return response()->json(['message' => 'Not enough users to swap bays'], 400);
-        }
-
-        // Retrieve the ship bays for each user in the room
-        $shipBays = ShipBay::whereIn('user_id', $userIds)->get()->keyBy('user_id');
-
-        // Swap the arena data between users
-        $firstUserId = $userIds[0];
-        $lastUserId = $userIds[count($userIds) - 1];
-        $firstUserBay = $shipBays[$firstUserId];
-        $lastUserBay = $shipBays[$lastUserId];
-
-        $tempArena = $firstUserBay->arena;
-        for ($i = 0; $i < count($userIds) - 1; $i++) {
-            $shipBays[$userIds[$i]]->arena = $shipBays[$userIds[$i + 1]]->arena;
-            $shipBays[$userIds[$i]]->save();
-        }
-        $lastUserBay->arena = $tempArena;
-        $lastUserBay->save();
-
-        return response()->json(['message' => 'Bays swapped successfully']);
-    }
-
-    public function getRoomUsers(Request $request, Room $room)
-    {
-        $userIds = json_decode($room->users, true);
-        $users = User::whereIn('id', $userIds)->get();
-
-        return response()->json($users);
-    }
-
     public function index()
     {
         $rooms = Room::all();
@@ -141,5 +102,84 @@ class RoomController extends Controller
         }
 
         return response()->json($room);
+    }
+
+    public function swapBays(Request $request, Room $room)
+    {
+        $userIds = json_decode($room->users, true);
+
+        if (count($userIds) < 2) {
+            return response()->json(['message' => 'Not enough users to swap bays'], 400);
+        }
+
+        $shipBays = ShipBay::whereIn('user_id', $userIds)->get()->keyBy('user_id');
+
+        $firstUserId = $userIds[0];
+        $lastUserId = $userIds[count($userIds) - 1];
+        $firstUserBay = $shipBays[$firstUserId];
+        $lastUserBay = $shipBays[$lastUserId];
+
+        $tempArena = $firstUserBay->arena;
+        for ($i = 0; $i < count($userIds) - 1; $i++) {
+            $shipBays[$userIds[$i]]->arena = $shipBays[$userIds[$i + 1]]->arena;
+            $shipBays[$userIds[$i]]->save();
+        }
+        $lastUserBay->arena = $tempArena;
+        $lastUserBay->save();
+
+        return response()->json(['message' => 'Bays swapped successfully']);
+    }
+
+    public function getRoomUsers(Request $request, Room $room)
+    {
+        $userIds = json_decode($room->users, true);
+        $users = User::whereIn('id', $userIds)->get();
+
+        return response()->json($users);
+    }
+
+    public function getDeckOrigins(Room $room)
+    {
+        $deck = SalesCallCardDeck::with('cards')->find($room->deck_id);
+        $origins = $deck->cards->pluck('origin')->unique();
+
+        return response()->json($origins);
+    }
+
+    public function setPorts(Request $request, Room $room)
+    {
+        $request->validate([
+            'ports' => 'required|array',
+            'ports.*' => 'required|string',
+        ]);
+
+        $ports = $request->input('ports');
+
+        foreach ($ports as $userId => $port) {
+            $user = User::find($userId);
+
+            if ($user) {
+                ShipBay::updateOrCreate(
+                    ['user_id' => $user->id, 'room_id' => $room->id],
+                    ['port' => $port, 'arena' => json_encode([])]
+                );
+            }
+        }
+
+        return response()->json(['message' => 'Ports set successfully'], 200);
+    }
+
+    public function selectDeck(Request $request, Room $room)
+    {
+        $validated = $request->validate([
+            'deck_id' => 'required|exists:sales_call_card_decks,id',
+            'max_users' => 'required|integer',
+        ]);
+
+        $room->deck_id = $validated['deck_id'];
+        $room->max_users = $validated['max_users'];
+        $room->save();
+
+        return response()->json(['message' => 'Deck selected and max users updated successfully'], 200);
     }
 }

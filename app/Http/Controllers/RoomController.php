@@ -182,4 +182,35 @@ class RoomController extends Controller
 
         return response()->json(['message' => 'Deck selected and max users updated successfully'], 200);
     }
+
+    public function saveConfig(Request $request, $roomId)
+    {
+        $validatedData = $request->validate([
+            'baySize' => 'required|array',
+            'bayCount' => 'required|integer',
+        ]);
+
+        $room = Room::findOrFail($roomId);
+        $room->bay_size = json_encode($validatedData['baySize']);
+        $room->bay_count = $validatedData['bayCount'];
+        $room->save();
+
+        return response()->json(['message' => 'Configuration saved successfully'], 200);
+    }
+
+    public function getConfig($roomId)
+    {
+        $room = Room::findOrFail($roomId);
+        return response()->json([
+            'baySize' => json_decode($room->bay_size),
+            'bayCount' => $room->bay_count,
+        ], 200);
+    }
+
+    public function getUserPort(Request $request, $roomId)
+    {
+        $user = $request->user();
+        $shipBay = ShipBay::where('room_id', $roomId)->where('user_id', $user->id)->first();
+        return response()->json(['port' => $shipBay->port]);
+    }
 }

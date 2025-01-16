@@ -43,7 +43,7 @@ class ShipBayController extends Controller
         //
     }
 
-    public function showByUserAndRoom($room, $user)
+    public function showBayByUserAndRoom($room, $user)
     {
         $shipBay = ShipBay::where('user_id', $user)
             ->where('room_id', $room)

@@ -5,6 +5,7 @@ use App\Http\Controllers\RoomController;
 use App\Http\Controllers\SalesCallCardController;
 use App\Http\Controllers\SalesCallCardDeckController;
 use App\Http\Controllers\ShipBayController;
+use App\Http\Controllers\ShipDockController;
 use App\Http\Controllers\UserController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
@@ -66,6 +67,8 @@ Route::get('decks/{deck}/origins', [SalesCallCardDeckController::class, 'getOrig
 // Admin - Card Routes
 Route::apiResource('cards', SalesCallCardController::class);
 Route::post('generate-cards/{deck}', [SalesCallCardController::class, 'generate']);
+Route::post('/cards/{cardId}/accept', [SalesCallCardController::class, 'accept']);
+Route::post('/cards/{cardId}/reject', [SalesCallCardController::class, 'reject']);
 
 // Admin - Container Routes
 Route::apiResource('containers', ContainerController::class);
@@ -88,10 +91,17 @@ Route::put('room/{room}/swap-bays', [RoomController::class, 'swapBays'])->middle
 Route::get('room/{room}/deck-origins', [RoomController::class, 'getDeckOrigins'])->middleware('auth:sanctum');
 Route::put('room/{room}/set-ports', [RoomController::class, 'setPorts'])->middleware('auth:sanctum');
 Route::put('room/{room}/select-deck', [RoomController::class, 'selectDeck'])->middleware('auth:sanctum', 'admin');
+Route::post('room/{room}/save-config', [RoomController::class, 'saveConfig'])->middleware('auth:sanctum', 'admin');
+Route::get('room/{room}/config', [RoomController::class, 'getConfig'])->middleware('auth:sanctum');
+Route::get('room/{room}/user-port', [RoomController::class, 'getUserPort'])->middleware('auth:sanctum');
 
 // ShipBay Routes
 Route::apiResource('ship-bays', ShipBayController::class);
-Route::get('ship-bays/{room}/{user}', [ShipBayController::class, 'showByUserAndRoom']);
+Route::get('ship-bays/{room}/{user}', [ShipBayController::class, 'showBayByUserAndRoom']);
 Route::get('moveDragMe', function () {
     return response()->json(['message' => 'Drag me to the right place!']);
 });
+
+// ShipDock Routes
+Route::apiResource('ship-docks', ShipDockController::class);
+Route::get('ship-docks/{room}/{user}', [ShipDockController::class, 'showDockByUserAndRoom']);

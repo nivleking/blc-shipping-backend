@@ -21,6 +21,8 @@ class Room extends Model
         'status',
         'deck_id',
         'max_users',
+        'bay_size',
+        'bay_count',
     ];
 
     public function users()

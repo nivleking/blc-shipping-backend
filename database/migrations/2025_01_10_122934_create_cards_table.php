@@ -23,6 +23,7 @@ return new class extends Migration
             $table->string('destination');
             $table->integer('quantity');
             $table->integer('revenue');
+            $table->string('status')->default('created');
             $table->timestamps();
         });
     }

@@ -23,14 +23,11 @@ class CardController extends Controller
             'revenue' => 'required|integer',
         ]);
 
-        // Set the type based on the id % 5 condition
         $nextId = Card::max('id') + 1;
         $validated['type'] = ($nextId % 5 == 0) ? 'Reefer' : 'Dry';
 
-        // Create SalesCallCard
         $card = Card::create($validated);
 
-        // Generate Containers for this Sales Call Card
         for ($i = 0; $i < $card->quantity; $i++) {
             $color = $this->generateContainerColor($card->destination);
             $card->containers()->create([
@@ -72,8 +69,8 @@ class CardController extends Controller
     public function accept($cardId)
     {
         $card = Card::findOrFail($cardId);
-        // $card->status = 'accepted';
-        // $card->save();
+        $card->status = 'accepted';
+        $card->save();
 
         // Add containers to docks
         // Assuming you have a method to add containers to docks
@@ -93,7 +90,6 @@ class CardController extends Controller
 
     public function generate(Request $request, Deck $deck)
     {
-        // Delete all Sales Call Cards in this Deck
         if ($deck->cards()->count() > 0) {
             foreach ($deck->cards as $card) {
                 $deck->cards()->detach($card->id);
@@ -173,7 +169,6 @@ class CardController extends Controller
             }
         }
 
-        // Distribute remaining revenue and quantity more evenly
         foreach ($ports as $port) {
             $currentRevenue = $revenuePerPort[$port];
             $currentQuantity = $quantityPerPort[$port];

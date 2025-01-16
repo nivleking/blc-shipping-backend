@@ -183,7 +183,7 @@ class RoomController extends Controller
         return response()->json(['message' => 'Deck selected and max users updated successfully'], 200);
     }
 
-    public function saveConfig(Request $request, $roomId)
+    public function saveBayConfig(Request $request, $roomId)
     {
         $validatedData = $request->validate([
             'baySize' => 'required|array',
@@ -198,7 +198,7 @@ class RoomController extends Controller
         return response()->json(['message' => 'Configuration saved successfully'], 200);
     }
 
-    public function getConfig($roomId)
+    public function getBayConfig($roomId)
     {
         $room = Room::findOrFail($roomId);
         return response()->json([

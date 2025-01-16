@@ -37,6 +37,6 @@ class Room extends Model
 
     public function deck()
     {
-        return $this->belongsTo(SalesCallCardDeck::class);
+        return $this->belongsTo(Deck::class);
     }
 }

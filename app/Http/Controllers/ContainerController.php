@@ -12,7 +12,7 @@ class ContainerController extends Controller
      */
     public function index()
     {
-        return Container::with('salesCallCard')->get();
+        return Container::with('card')->get();
     }
 
     /**
@@ -28,7 +28,7 @@ class ContainerController extends Controller
      */
     public function show(Container $container)
     {
-        return $container->load('salesCallCard');
+        return $container->load('card');
     }
 
     /**

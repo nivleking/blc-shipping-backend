@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Room;
-use App\Models\SalesCallCardDeck;
+use App\Models\Deck;
 use App\Models\ShipBay;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -140,7 +140,7 @@ class RoomController extends Controller
 
     public function getDeckOrigins(Room $room)
     {
-        $deck = SalesCallCardDeck::with('cards')->find($room->deck_id);
+        $deck = Deck::with('cards')->find($room->deck_id);
         $origins = $deck->cards->pluck('origin')->unique();
 
         return response()->json($origins);
@@ -172,7 +172,7 @@ class RoomController extends Controller
     public function selectDeck(Request $request, Room $room)
     {
         $validated = $request->validate([
-            'deck_id' => 'required|exists:sales_call_card_decks,id',
+            'deck_id' => 'required|exists:decks,id',
             'max_users' => 'required|integer',
         ]);
 
@@ -207,7 +207,7 @@ class RoomController extends Controller
         ], 200);
     }
 
-    public function getUserPort(Request $request, $roomId)
+    public function getUserPorts(Request $request, $roomId)
     {
         $user = $request->user();
         $shipBay = ShipBay::where('room_id', $roomId)->where('user_id', $user->id)->first();

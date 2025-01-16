@@ -2,8 +2,8 @@
 
 use App\Http\Controllers\ContainerController;
 use App\Http\Controllers\RoomController;
-use App\Http\Controllers\SalesCallCardController;
-use App\Http\Controllers\SalesCallCardDeckController;
+use App\Http\Controllers\CardController;
+use App\Http\Controllers\DeckController;
 use App\Http\Controllers\ShipBayController;
 use App\Http\Controllers\ShipDockController;
 use App\Http\Controllers\UserController;
@@ -58,17 +58,17 @@ Route::middleware('auth:sanctum')->group(function () {
 });
 
 // Admin - Deck Routes
-Route::apiResource('decks', SalesCallCardDeckController::class);
-Route::post('decks/{deck}/add-card', [SalesCallCardDeckController::class, 'addSalesCallCard']);
-Route::delete('decks/{deck}/remove-card/{salesCallCard}', [SalesCallCardDeckController::class, 'removeSalesCallCard']);
-Route::get('decks/{deck}/cards', [SalesCallCardDeckController::class, 'showByDeck']);
-Route::get('decks/{deck}/origins', [SalesCallCardDeckController::class, 'getOrigins']);
+Route::apiResource('decks', DeckController::class);
+Route::post('decks/{deck}/add-card', [DeckController::class, 'addCard']);
+Route::delete('decks/{deck}/remove-card/{salesCallCard}', [DeckController::class, 'removeCard']);
+Route::get('decks/{deck}/cards', [DeckController::class, 'showByDeck']);
+Route::get('decks/{deck}/origins', [DeckController::class, 'getOrigins']);
 
 // Admin - Card Routes
-Route::apiResource('cards', SalesCallCardController::class);
-Route::post('generate-cards/{deck}', [SalesCallCardController::class, 'generate']);
-Route::post('/cards/{cardId}/accept', [SalesCallCardController::class, 'accept']);
-Route::post('/cards/{cardId}/reject', [SalesCallCardController::class, 'reject']);
+Route::apiResource('cards', CardController::class);
+Route::post('generate-cards/{deck}', [CardController::class, 'generate']);
+Route::post('/cards/{cardId}/accept', [CardController::class, 'accept']);
+Route::post('/cards/{cardId}/reject', [CardController::class, 'reject']);
 
 // Admin - Container Routes
 Route::apiResource('containers', ContainerController::class);
@@ -93,7 +93,7 @@ Route::put('room/{room}/set-ports', [RoomController::class, 'setPorts'])->middle
 Route::put('room/{room}/select-deck', [RoomController::class, 'selectDeck'])->middleware('auth:sanctum', 'admin');
 Route::post('room/{room}/save-config', [RoomController::class, 'saveConfig'])->middleware('auth:sanctum', 'admin');
 Route::get('room/{room}/config', [RoomController::class, 'getConfig'])->middleware('auth:sanctum');
-Route::get('room/{room}/user-port', [RoomController::class, 'getUserPort'])->middleware('auth:sanctum');
+Route::get('room/{room}/user-port', [RoomController::class, 'getUserPorts'])->middleware('auth:sanctum');
 
 // ShipBay Routes
 Route::apiResource('ship-bays', ShipBayController::class);

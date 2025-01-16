@@ -2,15 +2,16 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\SalesCallCardDeck;
+use App\Models\Card;
+use App\Models\Deck;
 use App\Models\SalesCallCard;
 use Illuminate\Http\Request;
 
-class SalesCallCardDeckController extends Controller
+class DeckController extends Controller
 {
     public function index()
     {
-        $decks = SalesCallCardDeck::all();
+        $decks = Deck::all();
         return response()->json($decks);
     }
 
@@ -20,16 +21,16 @@ class SalesCallCardDeckController extends Controller
             'name' => 'required|string|max:255',
         ]);
 
-        $deck = SalesCallCardDeck::create($validated);
+        $deck = Deck::create($validated);
         return response()->json($deck, 201);
     }
 
-    public function show(SalesCallCardDeck $deck)
+    public function show(Deck $deck)
     {
         return response()->json($deck->load('cards'), 200);
     }
 
-    public function update(Request $request, SalesCallCardDeck $deck)
+    public function update(Request $request, Deck $deck)
     {
         $validated = $request->validate([
             'name' => 'string|max:255',
@@ -39,30 +40,30 @@ class SalesCallCardDeckController extends Controller
         return response()->json($deck, 200);
     }
 
-    public function destroy(SalesCallCardDeck $deck)
+    public function destroy(Deck $deck)
     {
         $deck->delete();
         return response()->json(null, 204);
     }
 
-    public function showByDeck(SalesCallCardDeck $deck)
+    public function showByDeck(Deck $deck)
     {
         return response()->json($deck->load('cards'), 200);
     }
 
-    public function getOrigins(SalesCallCardDeck $deck)
+    public function getOrigins(Deck $deck)
     {
         $origins = $deck->cards()->pluck('origin')->unique();
         return response()->json($origins, 200);
     }
 
-    public function addSalesCallCard(Request $request, SalesCallCardDeck $deck)
+    public function addCard(Request $request, Deck $deck)
     {
         $deck->cards()->attach($request->card_id);
         return response()->json(['message' => 'Card added to deck']);
     }
 
-    public function removeSalesCallCard(SalesCallCardDeck $deck, SalesCallCard $card)
+    public function removeCard(Deck $deck, Card $card)
     {
         $deck->cards()->detach($card->id);
         return response()->json(['message' => 'Card removed from deck']);

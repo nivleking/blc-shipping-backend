@@ -8,15 +8,16 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('sales_call_card_decks', function (Blueprint $table) {
+        Schema::create('card_deck', function (Blueprint $table) {
             $table->id();
-            $table->string('name');
+            $table->foreignId('card_id')->constrained('cards')->onDelete('cascade');
+            $table->foreignId('deck_id')->constrained('decks')->onDelete('cascade');
             $table->timestamps();
         });
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('sales_call_card_decks');
+        Schema::dropIfExists('card_deck');
     }
 };

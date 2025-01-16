@@ -2,6 +2,7 @@
 
 namespace App\Policies;
 
+use App\Models\Card;
 use App\Models\SalesCallCard;
 use App\Models\User;
 use Illuminate\Auth\Access\Response;
@@ -19,7 +20,7 @@ class SalesCallCardPolicy
     /**
      * Determine whether the user can view the model.
      */
-    public function view(User $user, SalesCallCard $salesCallCard): bool
+    public function view(User $user, Card $card): bool
     {
         //
     }
@@ -35,7 +36,7 @@ class SalesCallCardPolicy
     /**
      * Determine whether the user can update the model.
      */
-    public function update(User $user, SalesCallCard $salesCallCard): bool
+    public function update(User $user, Card $card): bool
     {
         //
     }
@@ -43,7 +44,7 @@ class SalesCallCardPolicy
     /**
      * Determine whether the user can delete the model.
      */
-    public function delete(User $user, SalesCallCard $salesCallCard): bool
+    public function delete(User $user, Card $card): bool
     {
         //
     }
@@ -51,7 +52,7 @@ class SalesCallCardPolicy
     /**
      * Determine whether the user can restore the model.
      */
-    public function restore(User $user, SalesCallCard $salesCallCard): bool
+    public function restore(User $user, Card $card): bool
     {
         //
     }
@@ -59,7 +60,7 @@ class SalesCallCardPolicy
     /**
      * Determine whether the user can permanently delete the model.
      */
-    public function forceDelete(User $user, SalesCallCard $salesCallCard): bool
+    public function forceDelete(User $user, Card $card): bool
     {
         //
     }

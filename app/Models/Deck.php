@@ -2,11 +2,10 @@
 
 namespace App\Models;
 
-
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class SalesCallCardDeck extends Model
+class Deck extends Model
 {
     use HasFactory;
 
@@ -14,6 +13,6 @@ class SalesCallCardDeck extends Model
 
     public function cards()
     {
-        return $this->belongsToMany(SalesCallCard::class, 'card_deck', 'deck_id', 'card_id');
+        return $this->belongsToMany(Card::class, 'card_deck', 'deck_id', 'card_id');
     }
 }

@@ -2,15 +2,15 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\SalesCallCard;
-use App\Models\SalesCallCardDeck;
+use App\Models\Card;
+use App\Models\Deck;
 use Illuminate\Http\Request;
 
-class SalesCallCardController extends Controller
+class CardController extends Controller
 {
     public function index()
     {
-        return SalesCallCard::with('decks')->get();
+        return Card::with('decks')->get();
     }
 
     public function store(Request $request)
@@ -24,29 +24,29 @@ class SalesCallCardController extends Controller
         ]);
 
         // Set the type based on the id % 5 condition
-        $nextId = SalesCallCard::max('id') + 1;
+        $nextId = Card::max('id') + 1;
         $validated['type'] = ($nextId % 5 == 0) ? 'Reefer' : 'Dry';
 
         // Create SalesCallCard
-        $salesCallCard = SalesCallCard::create($validated);
+        $card = Card::create($validated);
 
         // Generate Containers for this Sales Call Card
-        for ($i = 0; $i < $salesCallCard->quantity; $i++) {
-            $color = $this->generateContainerColor($salesCallCard->destination);
-            $salesCallCard->containers()->create([
+        for ($i = 0; $i < $card->quantity; $i++) {
+            $color = $this->generateContainerColor($card->destination);
+            $card->containers()->create([
                 'color' => $color,
             ]);
         }
 
-        return response()->json($salesCallCard->load('containers'), 201);
+        return response()->json($card->load('containers'), 201);
     }
 
-    public function show(SalesCallCard $salesCallCard)
+    public function show(Card $card)
     {
-        return $salesCallCard;
+        return $card;
     }
 
-    public function update(Request $request, SalesCallCard $salesCallCard)
+    public function update(Request $request, Card $card)
     {
         $validated = $request->validate([
             'type' => 'string',
@@ -57,21 +57,21 @@ class SalesCallCardController extends Controller
             'revenue' => 'integer',
         ]);
 
-        $salesCallCard->update($validated);
+        $card->update($validated);
 
-        return response()->json($salesCallCard, 200);
+        return response()->json($card, 200);
     }
 
-    public function destroy(SalesCallCard $salesCallCard)
+    public function destroy(Card $card)
     {
-        $salesCallCard->delete();
+        $card->delete();
 
         return response()->json(null, 204);
     }
 
     public function accept($cardId)
     {
-        $card = SalesCallCard::findOrFail($cardId);
+        $card = Card::findOrFail($cardId);
         // $card->status = 'accepted';
         // $card->save();
 
@@ -84,14 +84,14 @@ class SalesCallCardController extends Controller
 
     public function reject($cardId)
     {
-        $card = SalesCallCard::findOrFail($cardId);
+        $card = Card::findOrFail($cardId);
         $card->status = 'rejected';
         $card->save();
 
         return response()->json(['message' => 'Sales call card rejected.']);
     }
 
-    public function generate(Request $request, SalesCallCardDeck $deck)
+    public function generate(Request $request, Deck $deck)
     {
         // Delete all Sales Call Cards in this Deck
         if ($deck->cards()->count() > 0) {
@@ -211,7 +211,7 @@ class SalesCallCardController extends Controller
 
         // Save generated sales calls to the database
         foreach ($salesCalls as $salesCallData) {
-            $salesCall = SalesCallCard::create([
+            $salesCall = Card::create([
                 'type' => $salesCallData['type'],
                 'priority' => $salesCallData['priority'],
                 'origin' => $salesCallData['origin'],

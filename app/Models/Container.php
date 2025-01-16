@@ -11,7 +11,7 @@ class Container extends Model
 
     protected $fillable = [
         'color',
-        'sales_call_card_id',
+        'card_id',
     ];
 
     protected $hidden = [
@@ -19,8 +19,8 @@ class Container extends Model
         'updated_at',
     ];
 
-    public function salesCallCard()
+    public function card()
     {
-        return $this->belongsTo(SalesCallCard::class);
+        return $this->belongsTo(Card::class);
     }
 }

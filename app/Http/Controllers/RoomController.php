@@ -240,18 +240,24 @@ class RoomController extends Controller
         return response()->json($cardTemporary, 201);
     }
 
-    public function acceptCardTemporary(Request $request, $cardTemporaryId)
+    public function acceptCardTemporary(Request $request)
     {
-        $cardTemporary = CardTemporary::findOrFail($cardTemporaryId);
+        $validated = $request->validate([
+            'card_temporary_id' => 'required|exists:cards,id',
+        ]);
+        $cardTemporary = CardTemporary::where('card_id', $validated['card_temporary_id'])->first();
         $cardTemporary->status = 'accepted';
         $cardTemporary->save();
 
         return response()->json(['message' => 'Sales call card accepted.']);
     }
 
-    public function rejectCardTemporary(Request $request, $cardTemporaryId)
+    public function rejectCardTemporary(Request $request)
     {
-        $cardTemporary = CardTemporary::findOrFail($cardTemporaryId);
+        $validated = $request->validate([
+            'card_temporary_id' => 'required|exists:cards,id',
+        ]);
+        $cardTemporary = CardTemporary::where('card_id', $validated['card_temporary_id'])->first();
         $cardTemporary->status = 'rejected';
         $cardTemporary->save();
 

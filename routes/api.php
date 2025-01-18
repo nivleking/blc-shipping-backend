@@ -114,8 +114,8 @@ Route::post('rooms/{room}/save-config', [RoomController::class, 'saveBayConfig']
 Route::get('rooms/{room}/config', [RoomController::class, 'getBayConfig'])->middleware('auth:sanctum');
 Route::get('rooms/{room}/user-port', [RoomController::class, 'getUserPorts'])->middleware('auth:sanctum');
 Route::post('rooms/{room}/create-card-temporary/{user}', [RoomController::class, 'createCardTemporary'])->middleware('auth:sanctum', 'admin');
-Route::post('card-temporary/{cardTemporaryId}/accept', [RoomController::class, 'acceptCardTemporary'])->middleware('auth:sanctum');
-Route::post('card-temporary/{cardTemporaryId}/reject', [RoomController::class, 'rejectCardTemporary'])->middleware('auth:sanctum');
+Route::post('card-temporary/accept', [RoomController::class, 'acceptCardTemporary'])->middleware('auth:sanctum');
+Route::post('card-temporary/reject', [RoomController::class, 'rejectCardTemporary'])->middleware('auth:sanctum');
 
 // ShipBay Routes
 Route::get('ship-bays', [ShipBayController::class, 'index']);

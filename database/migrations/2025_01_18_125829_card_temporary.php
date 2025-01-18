@@ -12,6 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('card_temporaries', function (Blueprint $table) {
+            $table->id();
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
             $table->string('room_id');
             $table->foreign('room_id')->references('id')->on('rooms')->onDelete('cascade');

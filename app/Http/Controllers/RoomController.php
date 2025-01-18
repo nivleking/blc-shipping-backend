@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\CardTemporary;
 use App\Models\Room;
 use App\Models\Deck;
 use App\Models\ShipBay;
@@ -166,7 +167,16 @@ class RoomController extends Controller
             }
         }
 
-        return response()->json(['message' => 'Ports set successfully'], 200);
+        $shipbays = ShipBay::where('room_id', $room->id)->get();
+
+        return response()->json(
+            [
+                'message' => 'Ports set successfully',
+                'ports' => $ports,
+                'shipbays' => $shipbays,
+            ],
+            200
+        );
     }
 
     public function selectDeck(Request $request, Room $room)
@@ -212,5 +222,39 @@ class RoomController extends Controller
         $user = $request->user();
         $shipBay = ShipBay::where('room_id', $roomId)->where('user_id', $user->id)->first();
         return response()->json(['port' => $shipBay->port]);
+    }
+
+    public function createCardTemporary(Request $request, Room $room, User $user)
+    {
+        $validated = $request->validate([
+            'card_id' => 'required|exists:cards,id',
+        ]);
+
+        $cardTemporary = CardTemporary::create([
+            'user_id' => $user->id,
+            'room_id' => $room->id,
+            'card_id' => $validated['card_id'],
+            'status' => 'selected',
+        ]);
+
+        return response()->json($cardTemporary, 201);
+    }
+
+    public function acceptCardTemporary(Request $request, $cardTemporaryId)
+    {
+        $cardTemporary = CardTemporary::findOrFail($cardTemporaryId);
+        $cardTemporary->status = 'accepted';
+        $cardTemporary->save();
+
+        return response()->json(['message' => 'Sales call card accepted.']);
+    }
+
+    public function rejectCardTemporary(Request $request, $cardTemporaryId)
+    {
+        $cardTemporary = CardTemporary::findOrFail($cardTemporaryId);
+        $cardTemporary->status = 'rejected';
+        $cardTemporary->save();
+
+        return response()->json(['message' => 'Sales call card rejected.']);
     }
 }

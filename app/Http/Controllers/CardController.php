@@ -66,28 +66,6 @@ class CardController extends Controller
         return response()->json(null, 204);
     }
 
-    public function accept($cardId)
-    {
-        $card = Card::findOrFail($cardId);
-        $card->status = 'accepted';
-        $card->save();
-
-        // Add containers to docks
-        // Assuming you have a method to add containers to docks
-        // $this->addContainersToDocks($card);
-
-        return response()->json(['message' => 'Sales call card accepted.']);
-    }
-
-    public function reject($cardId)
-    {
-        $card = Card::findOrFail($cardId);
-        $card->status = 'rejected';
-        $card->save();
-
-        return response()->json(['message' => 'Sales call card rejected.']);
-    }
-
     public function generate(Request $request, Deck $deck)
     {
         if ($deck->cards()->count() > 0) {

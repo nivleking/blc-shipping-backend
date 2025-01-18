@@ -78,8 +78,6 @@ Route::post('cards', [CardController::class, 'store']);
 Route::get('cards/{card}', [CardController::class, 'show']);
 Route::put('cards/{card}', [CardController::class, 'update']);
 Route::delete('cards/{card}', [CardController::class, 'destroy']);
-Route::post('/cards/{cardId}/accept', [CardController::class, 'accept']);
-Route::post('/cards/{cardId}/reject', [CardController::class, 'reject']);
 
 // TODO:
 // 1. Market intelligence
@@ -115,6 +113,9 @@ Route::put('rooms/{room}/select-deck', [RoomController::class, 'selectDeck'])->m
 Route::post('rooms/{room}/save-config', [RoomController::class, 'saveBayConfig'])->middleware('auth:sanctum', 'admin');
 Route::get('rooms/{room}/config', [RoomController::class, 'getBayConfig'])->middleware('auth:sanctum');
 Route::get('rooms/{room}/user-port', [RoomController::class, 'getUserPorts'])->middleware('auth:sanctum');
+Route::post('rooms/{room}/create-card-temporary/{user}', [RoomController::class, 'createCardTemporary'])->middleware('auth:sanctum', 'admin');
+Route::post('card-temporary/{cardTemporaryId}/accept', [RoomController::class, 'acceptCardTemporary'])->middleware('auth:sanctum');
+Route::post('card-temporary/{cardTemporaryId}/reject', [RoomController::class, 'rejectCardTemporary'])->middleware('auth:sanctum');
 
 // ShipBay Routes
 Route::get('ship-bays', [ShipBayController::class, 'index']);

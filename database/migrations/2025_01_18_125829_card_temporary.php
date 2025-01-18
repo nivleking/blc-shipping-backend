@@ -11,15 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('ship_bays', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('user_id')->constrained();
+        Schema::create('card_temporaries', function (Blueprint $table) {
+            $table->foreignId('user_id')->constrained()->onDelete('cascade');
             $table->string('room_id');
             $table->foreign('room_id')->references('id')->on('rooms')->onDelete('cascade');
-            $table->string('port');
-            $table->json('arena');
-            $table->unsignedBigInteger('revenue')->default(0);
-            $table->unsignedBigInteger('penalty')->default(0);
+            $table->foreignId('card_id')->constrained('cards', 'id')->onDelete('cascade');
+            $table->string('status')->default('selected');
             $table->timestamps();
         });
     }
@@ -29,6 +26,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('ship_bays');
+        Schema::dropIfExists('card_temporary');
     }
 };

@@ -23,6 +23,8 @@ class RoomController extends Controller
             'id' => 'required|string|unique:rooms',
             'name' => 'string',
             'description' => 'string',
+            'deck_id' => 'required|exists:decks,id',
+            'max_users' => 'required|integer',
         ]);
 
         $admin = $request->user();
@@ -31,6 +33,8 @@ class RoomController extends Controller
             'admin_id' => $admin->id,
             'name' => $request->input('name', 'Default Room Name'),
             'description' => $request->input('description', 'Default Room Description'),
+            'deck_id' => $validated['deck_id'],
+            'max_users' => $validated['max_users'],
             'users' => json_encode([]),
         ]);
 
@@ -177,20 +181,6 @@ class RoomController extends Controller
             ],
             200
         );
-    }
-
-    public function selectDeck(Request $request, Room $room)
-    {
-        $validated = $request->validate([
-            'deck_id' => 'required|exists:decks,id',
-            'max_users' => 'required|integer',
-        ]);
-
-        $room->deck_id = $validated['deck_id'];
-        $room->max_users = $validated['max_users'];
-        $room->save();
-
-        return response()->json(['message' => 'Deck selected and max users updated successfully'], 200);
     }
 
     public function saveBayConfig(Request $request, $roomId)

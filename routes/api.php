@@ -109,7 +109,6 @@ Route::put('rooms/{room}/swap-bays', [RoomController::class, 'swapBays'])->middl
 Route::get('rooms/{room}/users', [RoomController::class, 'getRoomUsers'])->middleware('auth:sanctum');
 Route::get('rooms/{room}/deck-origins', [RoomController::class, 'getDeckOrigins'])->middleware('auth:sanctum');
 Route::put('rooms/{room}/set-ports', [RoomController::class, 'setPorts'])->middleware('auth:sanctum');
-Route::put('rooms/{room}/select-deck', [RoomController::class, 'selectDeck'])->middleware('auth:sanctum', 'admin');
 Route::post('rooms/{room}/save-config', [RoomController::class, 'saveBayConfig'])->middleware('auth:sanctum', 'admin');
 Route::get('rooms/{room}/config', [RoomController::class, 'getBayConfig'])->middleware('auth:sanctum');
 Route::get('rooms/{room}/user-port', [RoomController::class, 'getUserPorts'])->middleware('auth:sanctum');

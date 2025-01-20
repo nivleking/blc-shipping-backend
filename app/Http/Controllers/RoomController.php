@@ -25,6 +25,8 @@ class RoomController extends Controller
             'description' => 'string',
             'deck_id' => 'required|exists:decks,id',
             'max_users' => 'required|integer',
+            'bay_size' => 'required|array',
+            'bay_count' => 'required|integer',
         ]);
 
         $admin = $request->user();
@@ -35,6 +37,8 @@ class RoomController extends Controller
             'description' => $request->input('description', 'Default Room Description'),
             'deck_id' => $validated['deck_id'],
             'max_users' => $validated['max_users'],
+            'bay_size' => json_encode($validated['bay_size']),
+            'bay_count' => $validated['bay_count'],
             'users' => json_encode([]),
         ]);
 
@@ -181,21 +185,6 @@ class RoomController extends Controller
             ],
             200
         );
-    }
-
-    public function saveBayConfig(Request $request, $roomId)
-    {
-        $validatedData = $request->validate([
-            'baySize' => 'required|array',
-            'bayCount' => 'required|integer',
-        ]);
-
-        $room = Room::findOrFail($roomId);
-        $room->bay_size = json_encode($validatedData['baySize']);
-        $room->bay_count = $validatedData['bayCount'];
-        $room->save();
-
-        return response()->json(['message' => 'Configuration saved successfully'], 200);
     }
 
     public function getBayConfig($roomId)

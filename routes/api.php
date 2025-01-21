@@ -112,6 +112,7 @@ Route::put('rooms/{room}/set-ports', [RoomController::class, 'setPorts'])->middl
 Route::get('rooms/{room}/config', [RoomController::class, 'getBayConfig'])->middleware('auth:sanctum');
 Route::get('rooms/{room}/user-port', [RoomController::class, 'getUserPorts'])->middleware('auth:sanctum');
 Route::post('rooms/{room}/create-card-temporary/{user}', [RoomController::class, 'createCardTemporary'])->middleware('auth:sanctum', 'admin');
+Route::get('/card-temporary/{roomId}/{userId}', [RoomController::class, 'getCardTemporaries']);
 Route::post('card-temporary/accept', [RoomController::class, 'acceptCardTemporary'])->middleware('auth:sanctum');
 Route::post('card-temporary/reject', [RoomController::class, 'rejectCardTemporary'])->middleware('auth:sanctum');
 

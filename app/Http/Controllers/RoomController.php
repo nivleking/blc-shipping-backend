@@ -219,6 +219,15 @@ class RoomController extends Controller
         return response()->json($cardTemporary, 201);
     }
 
+    public function getCardTemporaries($roomId, $userId)
+    {
+        $cardTemporaries = CardTemporary::where('room_id', $roomId)
+            ->where('user_id', $userId)
+            ->get();
+
+        return response()->json($cardTemporaries);
+    }
+
     public function acceptCardTemporary(Request $request)
     {
         $validated = $request->validate([

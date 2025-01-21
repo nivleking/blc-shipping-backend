@@ -15,22 +15,43 @@ class ShipBayController extends Controller
     public function store(Request $request)
     {
         $validatedData = $request->validate([
-            'arena' => 'required|array',
             'user_id' => 'required|exists:users,id',
             'room_id' => 'required|exists:rooms,id',
+            'arena' => 'required|array',
+            'revenue' => 'required|numeric|min:0',
         ]);
 
+        $revenue = str_replace([',', '.'], '', $validatedData['revenue']);
+        $revenue = (float) $revenue;
+
         $shipBay = ShipBay::updateOrCreate(
-            ['user_id' => $validatedData['user_id'], 'room_id' => $validatedData['room_id']],
-            ['arena' => json_encode($validatedData['arena'])]
+            [
+                'user_id' => $validatedData['user_id'],
+                'room_id' => $validatedData['room_id']
+            ],
+            [
+                'arena' => json_encode($validatedData['arena']),
+                'revenue' => $revenue
+            ]
         );
 
-        return response()->json(['message' => 'Ship bay saved successfully', 'shipBay' => $shipBay], 201);
+        return response()->json($shipBay, 201);
     }
 
-    public function show(ShipBay $shipBay)
+    public function show($roomId, $userId)
     {
-        return response()->json($shipBay, 200);
+        $shipBay = ShipBay::where('room_id', $roomId)
+            ->where('user_id', $userId)
+            ->first();
+
+        if (!$shipBay) {
+            return response()->json([
+                'arena' => null,
+                'revenue' => 0
+            ]);
+        }
+
+        return response()->json($shipBay);
     }
 
     public function update(Request $request, ShipBay $shipBay)

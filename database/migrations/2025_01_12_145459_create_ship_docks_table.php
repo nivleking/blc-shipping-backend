@@ -13,12 +13,12 @@ return new class extends Migration
     {
         Schema::create('ship_docks', function (Blueprint $table) {
             $table->id();
-            $table->string('port')->nullable();
-            $table->json('arena');
-            $table->json('dock_size')->nullable();
             $table->foreignId('user_id')->constrained();
             $table->string('room_id');
             $table->foreign('room_id')->references('id')->on('rooms')->onDelete('cascade');
+            $table->string('port')->nullable();
+            $table->json('arena');
+            $table->json('dock_size')->nullable();
             $table->timestamps();
         });
     }

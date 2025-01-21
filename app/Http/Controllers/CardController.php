@@ -87,9 +87,9 @@ class CardController extends Controller
 
         $ports = $this->getPorts($validated['ports']);
         $basePriceMap = $this->getBasePriceMap();
-        $targetRevenue = 250000000;
-        $targetContainers = 15;
-        $salesCallsCount = 8;
+        $targetRevenue = $validated['maxTotalRevenueEachPort'];
+        $targetContainers = $validated['maxTotalContainerQuantityEachPort'];
+        $salesCallsCount = $validated['maxSalesCardEachPort'];
 
         $salesCalls = [];
         $id = 1;

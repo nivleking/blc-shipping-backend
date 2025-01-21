@@ -68,6 +68,7 @@ class CardController extends Controller
 
     public function generate(Request $request, Deck $deck)
     {
+        // Clear existing cards
         if ($deck->cards()->count() > 0) {
             foreach ($deck->cards as $card) {
                 $deck->cards()->detach($card->id);
@@ -84,128 +85,91 @@ class CardController extends Controller
             'revenueStandardDeviation' => 'required|numeric',
         ]);
 
-        $maxTotalRevenueEachPort = $validated['maxTotalRevenueEachPort'];
-        $maxTotalContainerQuantityEachPort = $validated['maxTotalContainerQuantityEachPort'];
-        $maxSalesCardEachPort = $validated['maxSalesCardEachPort'];
         $ports = $this->getPorts($validated['ports']);
-        $quantityStandardDeviation = $validated['quantityStandardDeviation'];
-        $revenueStandardDeviation = $validated['revenueStandardDeviation'];
+        $basePriceMap = $this->getBasePriceMap();
+        $targetRevenue = 250000000;
+        $targetContainers = 15;
+        $salesCallsCount = 8;
 
         $salesCalls = [];
-        $revenuePerPort = array_fill_keys($ports, 0);
-        $quantityPerPort = array_fill_keys($ports, 0);
-
-        $basePriceMap = $this->getBasePriceMap();
-
         $id = 1;
 
         foreach ($ports as $originPort) {
-            $salesCallsGenerated = 0;
+            // Pre-allocate containers (ensuring total 15)
+            $quantities = $this->distributeContainers($targetContainers, $salesCallsCount);
+            $revenues = [];
+            $totalPortRevenue = 0;
 
-            while ($salesCallsGenerated < $maxSalesCardEachPort) {
-                $remainingQuantity = $maxTotalContainerQuantityEachPort - $quantityPerPort[$originPort];
-                $remainingRevenue = $maxTotalRevenueEachPort - $revenuePerPort[$originPort];
-
-                if ($remainingQuantity <= 0 || $remainingRevenue <= 0) {
-                    break;
-                }
-
-                $avgQuantityPerCall = max(1, intdiv($remainingQuantity, $maxSalesCardEachPort - $salesCallsGenerated));
+            // Generate 8 sales calls for this port
+            for ($i = 0; $i < $salesCallsCount; $i++) {
                 $containerType = ($id % 5 == 0) ? "Reefer" : "Dry";
+
+                // Select destination
                 do {
                     $destinationPort = $ports[array_rand($ports)];
                 } while ($destinationPort === $originPort);
 
+                // Calculate base revenue using price map
                 $key = "$originPort-$destinationPort-$containerType";
                 $basePrice = $basePriceMap[$key] ?? 10000000;
 
-                $revenuePerContainer = max(50000, round($basePrice + $this->randomGaussian() * $revenueStandardDeviation, -4));
-                $quantity = min(max(1, round($avgQuantityPerCall + $this->randomGaussian() * $quantityStandardDeviation)), $remainingQuantity);
-                $totalRevenue = $revenuePerContainer * $quantity;
+                // Apply gaussian randomization to base price
+                $revenuePerContainer = max(50000, round($basePrice + $this->randomGaussian() * $validated['revenueStandardDeviation'], -4));
+                $revenue = $revenuePerContainer * $quantities[$i];
 
-                if ($totalRevenue > $remainingRevenue) {
-                    $totalRevenue = $remainingRevenue;
-                }
+                $revenues[] = $revenue;
+                $totalPortRevenue += $revenue;
 
-                $priority = rand(0, 1) ? "Committed" : "Non-Committed";
-
-                $salesCall = [
+                $salesCalls[] = [
                     'type' => $containerType,
-                    'priority' => $priority,
+                    'priority' => rand(0, 1) ? "Committed" : "Non-Committed",
                     'origin' => $originPort,
                     'destination' => $destinationPort,
-                    'quantity' => $quantity,
-                    'revenue' => $totalRevenue,
+                    'quantity' => $quantities[$i],
+                    'revenue' => $revenue,
+                    'index' => count($salesCalls), // Keep track of original index
                 ];
-                $salesCalls[] = $salesCall;
 
-                $revenuePerPort[$originPort] += $totalRevenue;
-                $quantityPerPort[$originPort] += $quantity;
-
-                $salesCallsGenerated++;
                 $id++;
             }
-        }
 
-        foreach ($ports as $port) {
-            $currentRevenue = $revenuePerPort[$port];
-            $currentQuantity = $quantityPerPort[$port];
-
-            $remainingRevenue = $maxTotalRevenueEachPort - $currentRevenue;
-            $remainingQuantity = $maxTotalContainerQuantityEachPort - $currentQuantity;
-
-            $portCalls = array_filter($salesCalls, function ($call) use ($port) {
-                return $call['origin'] === $port;
-            });
-
-            $eligibleCalls = array_filter($portCalls, function ($call) {
-                return $call['quantity'] > 1;
-            });
-
-            if (count($eligibleCalls) > 0) {
-                $revenuePerEligibleCall = intdiv($remainingRevenue, count($eligibleCalls));
-                foreach ($eligibleCalls as &$call) {
-                    $call['revenue'] += $revenuePerEligibleCall;
-                    $revenuePerPort[$port] += $revenuePerEligibleCall;
-                }
-            }
-
-            if ($remainingQuantity > 0) {
-                usort($portCalls, function ($a, $b) {
-                    return $a['quantity'] <=> $b['quantity'];
-                });
-
-                if (count($portCalls) > 0) {
-                    $portCalls[0]['quantity'] += $remainingQuantity;
-                    $quantityPerPort[$port] = $maxTotalContainerQuantityEachPort;
-                }
+            // Adjust revenues to match exactly 250M
+            $revenueFactor = $targetRevenue / $totalPortRevenue;
+            for ($i = 0; $i < $salesCallsCount; $i++) {
+                $index = count($salesCalls) - $salesCallsCount + $i;
+                $salesCalls[$index]['revenue'] = round($salesCalls[$index]['revenue'] * $revenueFactor);
             }
         }
 
-        // Save generated sales calls to the database
+        // Save generated sales calls to database
         foreach ($salesCalls as $salesCallData) {
-            $salesCall = Card::create([
-                'type' => $salesCallData['type'],
-                'priority' => $salesCallData['priority'],
-                'origin' => $salesCallData['origin'],
-                'destination' => $salesCallData['destination'],
-                'quantity' => $salesCallData['quantity'],
-                'revenue' => $salesCallData['revenue'],
-            ]);
+            unset($salesCallData['index']); // Remove temporary index
+            $salesCall = Card::create($salesCallData);
             $deck->cards()->attach($salesCall->id);
 
-            for ($i = 0; $i < $salesCall->quantity; $i++) {
-                $color = $this->generateContainerColor($salesCall->destination);
+            for ($i = 0; $i < $salesCallData['quantity']; $i++) {
                 $salesCall->containers()->create([
-                    'color' => $color,
+                    'color' => $this->generateContainerColor($salesCallData['destination']),
                 ]);
             }
         }
 
-        return response()->json(
-            $deck->load('cards'),
-            201
-        );
+        return response()->json($deck->load('cards'), 201);
+    }
+
+    private function distributeContainers($total, $parts)
+    {
+        $distribution = array_fill(0, $parts, 1); // Ensure at least 1 container each
+        $remaining = $total - $parts;
+
+        // Distribute remaining containers randomly
+        while ($remaining > 0) {
+            $index = rand(0, $parts - 1);
+            $distribution[$index]++;
+            $remaining--;
+        }
+
+        return $distribution;
     }
 
 

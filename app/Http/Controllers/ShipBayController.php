@@ -21,9 +21,6 @@ class ShipBayController extends Controller
             'revenue' => 'required|numeric|min:0',
         ]);
 
-        $revenue = str_replace([',', '.'], '', $validatedData['revenue']);
-        $revenue = (float) $revenue;
-
         $shipBay = ShipBay::updateOrCreate(
             [
                 'user_id' => $validatedData['user_id'],
@@ -31,7 +28,7 @@ class ShipBayController extends Controller
             ],
             [
                 'arena' => json_encode($validatedData['arena']),
-                'revenue' => $revenue
+                'revenue' => $validatedData['revenue'],
             ]
         );
 

@@ -18,8 +18,7 @@ return new class extends Migration
             $table->foreign('room_id')->references('id')->on('rooms')->onDelete('cascade');
             $table->string('port');
             $table->json('arena');
-            $table->decimal('revenue', 15, 2)->default(0);
-            $table->decimal('penalty', 15, 2)->default(0);
+            $table->unsignedBigInteger('revenue')->default(0);
             $table->timestamps();
         });
     }

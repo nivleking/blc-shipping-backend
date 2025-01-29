@@ -6,6 +6,7 @@ use App\Http\Controllers\CardController;
 use App\Http\Controllers\DeckController;
 use App\Http\Controllers\ShipBayController;
 use App\Http\Controllers\ShipDockController;
+use App\Http\Controllers\SimulationLogController;
 use App\Http\Controllers\UserController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
@@ -81,7 +82,6 @@ Route::delete('cards/{card}', [CardController::class, 'destroy']);
 
 // TODO:
 // 1. Market intelligence
-// 2. Fix the algorithm
 Route::post('generate-cards/{deck}', [CardController::class, 'generate']);
 
 // Admin - Container Routes
@@ -115,6 +115,7 @@ Route::post('rooms/{room}/create-card-temporary/{user}', [RoomController::class,
 Route::get('/card-temporary/{roomId}/{userId}', [RoomController::class, 'getCardTemporaries']);
 Route::post('card-temporary/accept', [RoomController::class, 'acceptCardTemporary'])->middleware('auth:sanctum');
 Route::post('card-temporary/reject', [RoomController::class, 'rejectCardTemporary'])->middleware('auth:sanctum');
+Route::get('rooms/{room}/rankings', [RoomController::class, 'getUsersRanking'])->middleware('auth:sanctum');
 
 // ShipBay Routes
 Route::get('ship-bays', [ShipBayController::class, 'index']);
@@ -136,3 +137,10 @@ Route::post('ship-docks', [ShipDockController::class, 'store']);
 
 // Other ShipDock Routes
 Route::get('ship-docks/{room}/{user}', [ShipDockController::class, 'showDockByUserAndRoom']);
+
+// Simulation Log Routes
+// Route::get('simulation-logs', [SimulationLogController::class, 'index'])->middleware('auth:sanctum', 'admin');
+Route::post('simulation-logs', [SimulationLogController::class, 'store'])->middleware('auth:sanctum');
+Route::get('simulation-logs/{simulationLog}', [SimulationLogController::class, 'show'])->middleware('auth:sanctum', 'admin');
+// Route::put('simulation-logs/{simulationLog}', [SimulationLogController::class, 'update'])->middleware('auth:sanctum', 'admin');
+Route::delete('simulation-logs/{simulationLog}', [SimulationLogController::class, 'destroy'])->middleware('auth:sanctum', 'admin');

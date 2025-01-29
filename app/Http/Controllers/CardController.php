@@ -77,9 +77,9 @@ class CardController extends Controller
         }
 
         $validated = $request->validate([
-            'maxTotalRevenueEachPort' => 'required|numeric',
-            'maxTotalContainerQuantityEachPort' => 'required|numeric',
-            'maxSalesCardEachPort' => 'required|numeric',
+            'totalRevenueEachPort' => 'required|numeric',
+            'totalContainerQuantityEachPort' => 'required|numeric',
+            'salesCallCountEachPort' => 'required|numeric',
             'ports' => 'required|numeric',
             'quantityStandardDeviation' => 'required|numeric',
             'revenueStandardDeviation' => 'required|numeric',
@@ -87,9 +87,9 @@ class CardController extends Controller
 
         $ports = $this->getPorts($validated['ports']);
         $basePriceMap = $this->getBasePriceMap();
-        $targetRevenue = $validated['maxTotalRevenueEachPort'];
-        $targetContainers = $validated['maxTotalContainerQuantityEachPort'];
-        $salesCallsCount = $validated['maxSalesCardEachPort'];
+        $targetRevenue = $validated['totalRevenueEachPort'];
+        $targetContainers = $validated['totalContainerQuantityEachPort'];
+        $salesCallsCount = $validated['salesCallCountEachPort'];
 
         $salesCalls = [];
         $id = 1;

@@ -70,6 +70,7 @@ class RoomController extends Controller
 
     public function destroy(Request $request, Room $room)
     {
+
         $room->delete();
         return response()->json(
             ['message' => 'Room deleted successfully'],
@@ -250,5 +251,17 @@ class RoomController extends Controller
         $cardTemporary->save();
 
         return response()->json(['message' => 'Sales call card rejected.']);
+    }
+
+    public function getUsersRanking($roomId)
+    {
+        $room = Room::findOrFail($roomId);
+        $userIds = json_decode($room->users, true);
+        $shipBays = ShipBay::with('user:id,name')
+            ->whereIn('user_id', $userIds)
+            ->get();
+        $ranking = $shipBays->sortByDesc('revenue')->values();
+
+        return response()->json($ranking);
     }
 }

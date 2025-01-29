@@ -5,7 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class ShipBay extends Model
+class SimulationLog extends Model
 {
     use HasFactory;
 
@@ -14,9 +14,4 @@ class ShipBay extends Model
     protected $casts = [
         'arena' => 'array',
     ];
-
-    public function user()
-    {
-        return $this->belongsTo(User::class);
-    }
 }

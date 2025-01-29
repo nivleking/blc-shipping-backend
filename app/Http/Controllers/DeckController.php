@@ -60,8 +60,16 @@ class DeckController extends Controller
 
     public function addCard(Request $request, Deck $deck)
     {
+        $request->validate([
+            'card_id' => 'required|exists:cards,id'
+        ]);
+
         $deck->cards()->attach($request->card_id);
-        return response()->json(['message' => 'Card added to deck']);
+
+        return response()->json([
+            'message' => 'Card added to deck successfully',
+            'deck' => $deck->load('cards')
+        ]);
     }
 
     public function removeCard(Deck $deck, Card $card)

@@ -22,6 +22,8 @@ return new class extends Migration
             $table->json('bay_size')->nullable();
             $table->integer('bay_count')->default(0);
             $table->json('bay_types')->nullable();
+            $table->integer('total_rounds')->default(1);
+            $table->integer('cards_limit_per_round')->default(1);
             $table->json('users')->nullable();
             $table->timestamps();
         });

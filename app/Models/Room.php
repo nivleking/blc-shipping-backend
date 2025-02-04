@@ -24,6 +24,8 @@ class Room extends Model
         'bay_size',
         'bay_count',
         'bay_types',
+        'total_rounds',
+        'cards_limit_per_round'
     ];
 
     protected $casts = [

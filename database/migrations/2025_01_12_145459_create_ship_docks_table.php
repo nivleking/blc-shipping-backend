@@ -18,7 +18,7 @@ return new class extends Migration
             $table->foreign('room_id')->references('id')->on('rooms')->onDelete('cascade');
             $table->string('port')->nullable();
             $table->json('arena');
-            $table->json('dock_size')->default(json_encode(['rows' => 6, 'columns' => 6]));
+            $table->json('dock_size')->nullable();
             $table->timestamps();
         });
     }

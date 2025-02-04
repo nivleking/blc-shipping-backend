@@ -20,6 +20,14 @@ return new class extends Migration
             $table->json('arena');
             $table->string('section')->default('section1');
             $table->unsignedBigInteger('revenue')->default(0);
+            $table->unsignedBigInteger('penalty')->default(0);
+            $table->unsignedBigInteger('total_revenue')->default(0);
+            $table->unsignedBigInteger('discharge_moves')->default(0);
+            $table->unsignedBigInteger('load_moves')->default(0);
+            $table->unsignedBigInteger('accepted_cards')->default(0);
+            $table->unsignedBigInteger('rejected_cards')->default(0);
+            $table->integer('current_round')->default(1);
+            $table->integer('current_round_cards')->default(0);
             $table->timestamps();
         });
     }

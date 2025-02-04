@@ -177,6 +177,7 @@ class CardController extends Controller
             for ($i = 0; $i < $salesCallData['quantity']; $i++) {
                 $salesCall->containers()->create([
                     'color' => $this->generateContainerColor($salesCallData['destination']),
+                    'type' => $salesCallData['type'],
                 ]);
             }
         }

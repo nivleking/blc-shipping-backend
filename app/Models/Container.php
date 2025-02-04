@@ -12,6 +12,7 @@ class Container extends Model
     protected $fillable = [
         'color',
         'card_id',
+        'type',
     ];
 
     protected $hidden = [

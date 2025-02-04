@@ -23,6 +23,12 @@ class Room extends Model
         'max_users',
         'bay_size',
         'bay_count',
+        'bay_types',
+    ];
+
+    protected $casts = [
+        'users' => 'array',
+        'bay_types' => 'array',
     ];
 
     public function users()

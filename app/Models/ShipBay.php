@@ -9,7 +9,7 @@ class ShipBay extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['arena', 'port', 'user_id', 'room_id', 'revenue'];
+    protected $fillable = ['arena', 'port', 'user_id', 'room_id', 'revenue', 'section',];
 
     protected $casts = [
         'arena' => 'array',

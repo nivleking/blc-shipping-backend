@@ -19,6 +19,7 @@ class ShipBayController extends Controller
             'room_id' => 'required|exists:rooms,id',
             'arena' => 'required|array',
             'revenue' => 'required|numeric|min:0',
+            'section' => 'sometimes|string|in:section1,section2',
         ]);
 
         $shipBay = ShipBay::updateOrCreate(
@@ -29,10 +30,31 @@ class ShipBayController extends Controller
             [
                 'arena' => json_encode($validatedData['arena']),
                 'revenue' => $validatedData['revenue'],
+                'section' => $validatedData['section'] ?? 'section1', // Set section
             ]
         );
 
         return response()->json($shipBay, 201);
+    }
+
+    // Add method to update section
+    public function updateSection(Request $request, $roomId, $userId)
+    {
+        $validatedData = $request->validate([
+            'section' => 'required|string|in:section1,section2'
+        ]);
+
+        $shipBay = ShipBay::where('room_id', $roomId)
+            ->where('user_id', $userId)
+            ->first();
+
+        if (!$shipBay) {
+            return response()->json(['message' => 'Ship bay not found'], 404);
+        }
+
+        $shipBay->update(['section' => $validatedData['section']]);
+
+        return response()->json($shipBay);
     }
 
     public function show($roomId, $userId)
@@ -41,19 +63,7 @@ class ShipBayController extends Controller
             ->where('user_id', $userId)
             ->first();
 
-        if (!$shipBay) {
-            return response()->json([
-                'arena' => null,
-                'revenue' => 0
-            ]);
-        }
-
         return response()->json($shipBay);
-    }
-
-    public function update(Request $request, ShipBay $shipBay)
-    {
-        //
     }
 
     public function destroy(ShipBay $shipBay)
@@ -73,4 +83,6 @@ class ShipBayController extends Controller
 
         return response()->json($shipBay, 200);
     }
+
+
 }

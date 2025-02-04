@@ -6,6 +6,7 @@ use App\Http\Controllers\CardController;
 use App\Http\Controllers\DeckController;
 use App\Http\Controllers\ShipBayController;
 use App\Http\Controllers\ShipDockController;
+use App\Http\Controllers\ShipLayoutController;
 use App\Http\Controllers\SimulationLogController;
 use App\Http\Controllers\UserController;
 use Illuminate\Http\Request;
@@ -97,7 +98,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('rooms', [RoomController::class, 'index'])->middleware('admin');
     Route::post('rooms', [RoomController::class, 'store'])->middleware('admin');
     Route::get('rooms/{room}', [RoomController::class, 'show']);
-    Route::put('rooms/{room}', [RoomController::class, 'update'])->middleware('admin');
+    Route::put('rooms/{room}', [RoomController::class, 'update']);
     Route::delete('rooms/{room}', [RoomController::class, 'destroy'])->middleware('admin');
 });
 
@@ -106,11 +107,13 @@ Route::post('rooms/{room}/join', [RoomController::class, 'joinRoom'])->middlewar
 Route::post('rooms/{room}/leave', [RoomController::class, 'leaveRoom'])->middleware('auth:sanctum', 'user');
 Route::delete('rooms/{room}/kick/{user}', [RoomController::class, 'kickUser'])->middleware('auth:sanctum', 'admin');
 Route::put('rooms/{room}/swap-bays', [RoomController::class, 'swapBays'])->middleware('auth:sanctum', 'admin');
+Route::put('rooms/{room}/swap-bays-custom', [RoomController::class, 'swapBaysCustom'])->middleware('auth:sanctum', 'admin');
 Route::get('rooms/{room}/users', [RoomController::class, 'getRoomUsers'])->middleware('auth:sanctum');
 Route::get('rooms/{room}/deck-origins', [RoomController::class, 'getDeckOrigins'])->middleware('auth:sanctum');
 Route::put('rooms/{room}/set-ports', [RoomController::class, 'setPorts'])->middleware('auth:sanctum');
 Route::get('rooms/{room}/config', [RoomController::class, 'getBayConfig'])->middleware('auth:sanctum');
-Route::get('rooms/{room}/user-port', [RoomController::class, 'getUserPorts'])->middleware('auth:sanctum');
+Route::get('rooms/{room}/user-port', [RoomController::class, 'getUserPortsV1'])->middleware('auth:sanctum');
+Route::get('rooms/{room}/user-port2', [RoomController::class, 'getUserPortsV2'])->middleware('auth:sanctum');
 Route::post('rooms/{room}/create-card-temporary/{user}', [RoomController::class, 'createCardTemporary'])->middleware('auth:sanctum', 'admin');
 Route::get('/card-temporary/{roomId}/{userId}', [RoomController::class, 'getCardTemporaries']);
 Route::post('card-temporary/accept', [RoomController::class, 'acceptCardTemporary'])->middleware('auth:sanctum');
@@ -126,6 +129,16 @@ Route::get('ship-bays/{shipBay}', [ShipBayController::class, 'show']);
 
 // Other ShipBay Routes
 Route::get('ship-bays/{room}/{user}', [ShipBayController::class, 'showBayByUserAndRoom']);
+Route::put('/ship-bays/{room}/{user}/section', [ShipBayController::class, 'updateSection']);
+Route::post('/ship-bays/{room}/{user}/moves', [ShipBayController::class, 'incrementMoves'])->middleware('auth:sanctum');
+Route::post('/ship-bays/{room}/{user}/cards', [ShipBayController::class, 'incrementCards'])->middleware('auth:sanctum');
+
+// ShipLayout Routes
+Route::get('ship-layouts', [ShipLayoutController::class, 'index']);
+Route::post('ship-layouts', [ShipLayoutController::class, 'store']);
+Route::get('ship-layouts/{shipLayout}', [ShipLayoutController::class, 'show']);
+Route::put('ship-layouts/{shipLayout}', [ShipLayoutController::class, 'update']);
+Route::delete('ship-layouts/{shipLayout}', [ShipLayoutController::class, 'destroy']);
 
 // ShipDock Routes
 // Route::apiResource('ship-docks', ShipDockController::class);

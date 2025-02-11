@@ -13,16 +13,34 @@ class UserController extends Controller
     public function register(Request $request)
     {
         $admin = $request->user();
-        if (!$admin->is_admin) {
-            return response()->json(['message' => 'Unauthorized'], 401);
+
+        // Hanya super admin yang bisa membuat admin baru
+        if (!$admin->is_super_admin && $request->input('is_admin')) {
+            return response()->json([
+                'message' => 'Only Super Admin can create new admins'
+            ], 403);
         }
 
+        // Pastikan is_super_admin tidak bisa diset melalui request
         $validated = $request->validate([
             'name' => 'required|string|max:255|unique:users',
-            'email' => 'required|string|email|unique:users',
-            'is_admin' => 'required',
+            'is_admin' => 'required|boolean',
             'password' => 'required|string|confirmed',
         ]);
+        $validated['is_super_admin'] = false; // Force set to false for new users
+
+        // Generate unique random email
+        $baseEmail = strtolower(str_replace(' ', '', $validated['name']));
+        $randomString = substr(md5(uniqid()), 0, 8);
+        $email = $baseEmail . $randomString . '@blc-shipping.com';
+
+        // Ensure email is unique
+        while (User::where('email', $email)->exists()) {
+            $randomString = substr(md5(uniqid()), 0, 8);
+            $email = $baseEmail . $randomString . '@blc-shipping.com';
+        }
+
+        $validated['email'] = $email;
 
         $user = User::create($validated);
 
@@ -148,10 +166,28 @@ class UserController extends Controller
     public function update(Request $request, User $user)
     {
         $validated = $request->validate([
-            'name' => 'string|max:255|unique:users',
-            'email' => 'string|email|unique:users',
-            'password' => 'string|confirmed',
+            'name' => 'string|max:255|unique:users,name,' . $user->id,  // Tambahkan pengecualian untuk ID saat ini
+            'password' => 'string|confirmed|nullable',  // Buat password opsional
         ]);
+
+        // Hanya update email jika nama berubah
+        if (isset($validated['name']) && $validated['name'] !== $user->name) {
+            $baseEmail = strtolower(str_replace(' ', '', $validated['name']));
+            $randomString = substr(md5(uniqid()), 0, 8);
+            $email = $baseEmail . $randomString . '@blc-shipping.com';
+
+            while (User::where('email', $email)->where('id', '!=', $user->id)->exists()) {
+                $randomString = substr(md5(uniqid()), 0, 8);
+                $email = $baseEmail . $randomString . '@blc-shipping.com';
+            }
+
+            $validated['email'] = $email;
+        }
+
+        // Hanya update password jika diisi
+        if (empty($validated['password'])) {
+            unset($validated['password']);
+        }
 
         $user->update($validated);
 
@@ -160,6 +196,22 @@ class UserController extends Controller
 
     public function destroy(User $user)
     {
+        $requestingUser = request()->user();
+
+        // Jika user yang akan dihapus adalah super admin, tolak request
+        if ($user->is_super_admin) {
+            return response()->json([
+                'message' => 'Super Admin cannot be deleted'
+            ], 403);
+        }
+
+        // Jika yang request bukan super admin dan mencoba menghapus admin, tolak
+        if (!$requestingUser->is_super_admin && $user->is_admin) {
+            return response()->json([
+                'message' => 'Only Super Admin can delete other admins'
+            ], 403);
+        }
+
         $user->delete();
         return response()->json("Deleted", 204);
     }

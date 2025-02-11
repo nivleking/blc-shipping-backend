@@ -41,12 +41,12 @@ class UserSeeder extends Seeder
         $user->password = bcrypt('12');
         $user->save();
 
-        $admin = new User();
-        $admin->name = 'admin';
-        $admin->email = 'admin@mail.com';
-        $admin->is_admin = true;
-        $admin->password = bcrypt('12');
-        $admin->save();
+        User::create([
+            'name' => 'superadmin',
+            'email' => 'superadmin@blc-shipping.com',
+            'password' => bcrypt('password'),
+            'is_admin' => true,
+            'is_super_admin' => true,
+        ]);
     }
-
 }

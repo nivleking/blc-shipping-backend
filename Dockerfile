@@ -1,48 +1,40 @@
 FROM php:8.2-fpm
 
+WORKDIR /var/www
+
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     git \
     curl \
     libpng-dev \
-    libjpeg-dev \
-    libfreetype6-dev \
+    libonig-dev \
+    libxml2-dev \
+    libzip-dev \
     zip \
     unzip \
-    nginx
-
-# Install PHP extensions
-RUN docker-php-ext-install pdo pdo_mysql
-
-WORKDIR /var/www/html
-
-# Copy nginx configuration
-COPY docker/nginx/nginx.conf /etc/nginx/nginx.conf
-
-# Copy composer files
-COPY composer.* ./
+    && docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd zip \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-# Copy application files
-COPY . .
-
-# Copy init scripts
-COPY docker/init.sh /usr/local/bin/init.sh
-COPY docker/wait-for-it.sh /usr/local/bin/wait-for-it.sh
-RUN chmod +x /usr/local/bin/init.sh /usr/local/bin/wait-for-it.sh
+# Copy composer files first
+COPY composer.json composer.lock ./
 
 # Install dependencies
-RUN composer install --no-scripts --no-autoloader
+RUN composer install --prefer-dist --no-scripts --no-autoloader --no-dev
+
+# Copy application files
+COPY . .
 
 # Generate optimized autoload files
 RUN composer dump-autoload --optimize
 
 # Set permissions
-RUN chown -R www-data:www-data storage bootstrap/cache
+RUN chown -R www-data:www-data storage bootstrap/cache \
+    && chmod -R 775 storage bootstrap/cache
 
 EXPOSE 8000
 
-# Start with init script
-CMD ["/usr/local/bin/init.sh"]
+CMD ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8000"]

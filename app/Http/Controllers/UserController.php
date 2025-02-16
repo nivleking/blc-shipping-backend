@@ -21,11 +21,18 @@ class UserController extends Controller
             ], 403);
         }
 
-        // Pastikan is_super_admin tidak bisa diset melalui request
         $validated = $request->validate([
             'name' => 'required|string|max:255|unique:users',
             'is_admin' => 'required|boolean',
-            'password' => 'required|string|confirmed',
+            'password' => [
+                'required',
+                'string',
+                'confirmed',
+                'min:8',
+                'regex:/^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&])[A-Za-z\d@$!%*#?&]{8,}$/'
+            ],
+        ], [
+            'password.regex' => 'Password must contain at least one letter, one number and one special character'
         ]);
         $validated['is_super_admin'] = false; // Force set to false for new users
 
@@ -40,11 +47,16 @@ class UserController extends Controller
             $email = $baseEmail . $randomString . '@blc-shipping.com';
         }
 
+        $validated['created_by'] = $admin->id;
+        $validated['updated_by'] = $admin->id;
         $validated['email'] = $email;
+        $validated['password_plain'] = $validated['password'];
+        $validated['password'] = Hash::make($validated['password']);
+        $validated['status'] = 'active';
 
         $user = User::create($validated);
 
-        return response()->json($user, 201);
+        return response()->json($user->load(['creator', 'editor']), 201);
     }
 
     public function refreshToken(Request $request)
@@ -112,6 +124,13 @@ class UserController extends Controller
             Carbon::now()->addMinutes(config('sanctum.rt_expiration'))
         );
 
+        $user->update([
+            'last_login_at' => now(),
+            'last_login_ip' => $request->ip(),
+            'login_count' => $user->login_count + 1,
+            'status' => 'active'
+        ]);
+
         return response()->json([
             'is_admin' => $user->is_admin,
             'token' => $accessToken->plainTextToken,
@@ -166,9 +185,18 @@ class UserController extends Controller
     public function update(Request $request, User $user)
     {
         $validated = $request->validate([
-            'name' => 'string|max:255|unique:users,name,' . $user->id,  // Tambahkan pengecualian untuk ID saat ini
-            'password' => 'string|confirmed|nullable',  // Buat password opsional
+            'name' => 'string|max:255|unique:users,name,' . $user->id,
+            'password' => [
+                'nullable',
+                'string',
+                'confirmed',
+                'min:8',
+                'regex:/^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&])[A-Za-z\d@$!%*#?&]{8,}$/'
+            ],
+        ], [
+            'password.regex' => 'Password must contain at least one letter, one number and one special character'
         ]);
+
 
         // Hanya update email jika nama berubah
         if (isset($validated['name']) && $validated['name'] !== $user->name) {
@@ -184,14 +212,18 @@ class UserController extends Controller
             $validated['email'] = $email;
         }
 
-        // Hanya update password jika diisi
+        $validated['updated_by'] = $request->user()->id;
+
         if (empty($validated['password'])) {
             unset($validated['password']);
+        } else {
+            $validated['password_plain'] = $validated['password'];
+            $validated['password'] = Hash::make($validated['password']);
         }
 
         $user->update($validated);
 
-        return response()->json($user, 200);
+        return response()->json($user->load(['creator', 'editor']), 200);
     }
 
     public function destroy(User $user)
@@ -218,13 +250,91 @@ class UserController extends Controller
 
     public function getAllUsers()
     {
-        $admins = User::where('is_admin', false)->get();
-        return response()->json($admins);
+        $users = User::where('is_admin', false)
+            ->with(['creator', 'editor'])
+            ->latest()
+            ->get()
+            ->map(function ($user) {
+                return [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'status' => $user->status,
+                    'created_at' => $user->created_at,
+                    'updated_at' => $user->updated_at,
+                    'created_by' => $user->creator ? [
+                        'id' => $user->creator->id,
+                        'name' => $user->creator->name
+                    ] : null,
+                    'updated_by' => $user->editor ? [
+                        'id' => $user->editor->id,
+                        'name' => $user->editor->name
+                    ] : null,
+                    'last_login_at' => $user->last_login_at,
+                    'last_login_ip' => $user->last_login_ip,
+                    'login_count' => $user->login_count,
+                    'password_plain' => $user->password_plain
+                ];
+            });
+
+        return response()->json($users);
     }
 
     public function getAllAdmins()
     {
-        $admins = User::where('is_admin', true)->get();
+        $admins = User::where('is_admin', true)
+            ->with(['creator', 'editor'])
+            ->latest()
+            ->get()
+            ->map(function ($admin) {
+                return [
+                    'id' => $admin->id,
+                    'name' => $admin->name,
+                    'is_admin' => $admin->is_admin,
+                    'is_super_admin' => $admin->is_super_admin,
+                    'status' => $admin->status,
+                    'created_at' => $admin->created_at,
+                    'updated_at' => $admin->updated_at,
+                    'created_by' => $admin->creator ? [
+                        'id' => $admin->creator->id,
+                        'name' => $admin->creator->name
+                    ] : null,
+                    'updated_by' => $admin->editor ? [
+                        'id' => $admin->editor->id,
+                        'name' => $admin->editor->name
+                    ] : null,
+                    'last_login_at' => $admin->last_login_at,
+                    'last_login_ip' => $admin->last_login_ip,
+                    'login_count' => $admin->login_count,
+                    'password_plain' => $admin->password_plain
+                ];
+            });
+
         return response()->json($admins);
+    }
+
+    public function showPassword(Request $request, User $user)
+    {
+        $superAdmin = $request->user();
+
+        if (!$superAdmin->is_super_admin) {
+            return response()->json([
+                'message' => 'Only Super Admin can view passwords'
+            ], 403);
+        }
+
+        $validated = $request->validate([
+            'super_admin_password' => 'required|string'
+        ]);
+
+        if (!Hash::check($validated['super_admin_password'], $superAdmin->password)) {
+            return response()->json([
+                'message' => 'Invalid super admin password'
+            ], 403);
+        }
+
+        return response()->json([
+            'success' => true,
+            'password' => $user->password_plain
+        ]);
     }
 }

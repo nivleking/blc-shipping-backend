@@ -16,11 +16,18 @@ return new class extends Migration
             $table->string('name');
             $table->boolean('is_admin')->default(false);
             $table->boolean('is_super_admin')->default(false);
+            $table->string('password');
+            $table->string('password_plain')->nullable();
+            $table->timestamps();
+            $table->foreignId('created_by')->nullable()->constrained('users');
+            $table->foreignId('updated_by')->nullable()->constrained('users');
+            $table->string('status')->default('active');
+            $table->timestamp('last_login_at')->nullable();
+            $table->string('last_login_ip')->nullable();
+            $table->integer('login_count')->default(0);
             $table->string('email')->unique();
             $table->timestamp('email_verified_at')->nullable();
-            $table->string('password');
             $table->rememberToken();
-            $table->timestamps();
         });
     }
 

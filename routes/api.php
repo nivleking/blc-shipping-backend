@@ -61,6 +61,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('users/{user}', [UserController::class, 'show']);
     Route::put('users/{user}', [UserController::class, 'update'])->middleware('admin');
     Route::delete('users/{user}', [UserController::class, 'destroy'])->middleware('admin');
+    Route::post('/users/{user}/password', [UserController::class, 'showPassword']);
 });
 
 // Admin - Deck Routes

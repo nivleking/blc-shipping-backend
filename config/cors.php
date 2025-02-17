@@ -23,6 +23,7 @@ return [
         'https://slg.petra.ac.id',
         'http://localhost:5173', // for local development
         'http://localhost:5174', // for local development
+        'http://192.168.160.20:5174'
     ],
 
     'allowed_origins_patterns' => [],

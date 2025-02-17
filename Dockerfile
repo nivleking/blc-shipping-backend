@@ -22,8 +22,8 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 # Copy composer files first
 COPY composer.json composer.lock ./
 
-# Install dependencies
-RUN composer install --prefer-dist --no-scripts --no-autoloader --no-dev
+# Install ALL dependencies including dev
+RUN composer install --prefer-dist --no-scripts --no-autoloader
 
 # Copy application files
 COPY . .

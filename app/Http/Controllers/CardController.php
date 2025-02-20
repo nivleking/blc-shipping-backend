@@ -20,7 +20,7 @@ class CardController extends Controller
             'origin' => 'required|string',
             'destination' => 'required|string',
             'quantity' => 'required|integer',
-            'revenue' => 'required|integer',
+            'revenue' => 'required|numeric',
         ]);
 
         $nextId = Card::max('id') + 1;
@@ -120,10 +120,7 @@ class CardController extends Controller
                 $basePrice = $basePriceMap[$key] ?? 10000000;
 
                 // Round revenue per container to nearest 50,000
-                $revenuePerContainer = round(
-                    ($basePrice + $this->randomGaussian() * $validated['revenueStandardDeviation']) / 50000
-                ) * 50000;
-                $revenuePerContainer = max(50000, $revenuePerContainer);
+                $revenuePerContainer = $basePrice + $this->randomGaussian() * $validated['revenueStandardDeviation'];
 
                 $revenue = $revenuePerContainer * $quantities[$i];
                 $portRevenue += $revenue;
@@ -145,7 +142,7 @@ class CardController extends Controller
             // Scale revenues to match target while maintaining 50,000 increments
             $revenueFactor = $targetRevenue / $portRevenue;
             foreach ($portCalls as &$call) {
-                $newRevenuePerContainer = round(($call['revenuePerContainer'] * $revenueFactor) / 50000) * 50000;
+                $newRevenuePerContainer = $call['revenuePerContainer'] * $revenueFactor;
                 $call['revenue'] = $newRevenuePerContainer * $call['quantity'];
                 unset($call['revenuePerContainer']);
             }

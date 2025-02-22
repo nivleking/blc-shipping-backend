@@ -6,6 +6,7 @@ use App\Models\CardTemporary;
 use App\Models\Room;
 use App\Models\Deck;
 use App\Models\ShipBay;
+use App\Models\ShipLayout;
 use App\Models\User;
 use Exception;
 use Illuminate\Http\Request;
@@ -24,35 +25,41 @@ class RoomController extends Controller
     {
         $validated = $request->validate([
             'id' => 'required|string|unique:rooms',
-            'name' => 'string',
-            'description' => 'string',
-            'deck_id' => 'required|exists:decks,id',
+            'name' => 'required|string',
+            'description' => 'required|string',
+            'deck' => 'required|exists:decks,id',
             'max_users' => 'required|integer',
-            'bay_size' => 'required|array',
-            'bay_count' => 'required|integer',
-            'bay_types' => 'required|array|min:1',
-            'bay_types.*' => 'in:dry,reefer',
+            'ship_layout' => 'required|exists:ship_layouts,id',
             'total_rounds' => 'required|integer|min:1',
             'cards_limit_per_round' => 'required|integer|min:1',
         ]);
 
         $admin = $request->user();
-        $room = Room::create([
-            'id' => $validated['id'],
-            'admin_id' => $admin->id,
-            'name' => $request->input('name', 'Default Room Name'),
-            'description' => $request->input('description', 'Default Room Description'),
-            'deck_id' => $validated['deck_id'],
-            'max_users' => $validated['max_users'],
-            'bay_size' => json_encode($validated['bay_size']),
-            'bay_count' => $validated['bay_count'],
-            'bay_types' => json_encode($validated['bay_types']),
-            'total_rounds' => $validated['total_rounds'],
-            'cards_limit_per_round' => $validated['cards_limit_per_round'],
-            'users' => json_encode([]),
-        ]);
+        $layout = ShipLayout::findOrFail($validated['ship_layout']);
 
-        return response()->json($room, 200);
+        try {
+            $room = Room::create([
+                'id' => $validated['id'],
+                'admin_id' => $admin->id,
+                'name' => $validated['name'],
+                'description' => $validated['description'],
+                'deck_id' => $validated['deck'],
+                'max_users' => $validated['max_users'],
+                'bay_size' => json_encode($layout->bay_size),
+                'bay_count' => $layout->bay_count,
+                'bay_types' => json_encode($layout->bay_types),
+                'total_rounds' => $validated['total_rounds'],
+                'cards_limit_per_round' => $validated['cards_limit_per_round'],
+                'users' => json_encode([]),
+            ]);
+
+            return response()->json($room, 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to create room',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     public function show(Room $room)

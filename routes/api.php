@@ -135,11 +135,13 @@ Route::post('/ship-bays/{room}/{user}/moves', [ShipBayController::class, 'increm
 Route::post('/ship-bays/{room}/{user}/cards', [ShipBayController::class, 'incrementCards'])->middleware('auth:sanctum');
 
 // ShipLayout Routes
-Route::get('ship-layouts', [ShipLayoutController::class, 'index']);
-Route::post('ship-layouts', [ShipLayoutController::class, 'store']);
-Route::get('ship-layouts/{shipLayout}', [ShipLayoutController::class, 'show']);
-Route::put('ship-layouts/{shipLayout}', [ShipLayoutController::class, 'update']);
-Route::delete('ship-layouts/{shipLayout}', [ShipLayoutController::class, 'destroy']);
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('ship-layouts', [ShipLayoutController::class, 'index']);
+    Route::post('ship-layouts', [ShipLayoutController::class, 'store']);
+    Route::get('ship-layouts/{shipLayout}', [ShipLayoutController::class, 'show']);
+    Route::put('ship-layouts/{shipLayout}', [ShipLayoutController::class, 'update']);
+    Route::delete('ship-layouts/{shipLayout}', [ShipLayoutController::class, 'destroy']);
+});
 
 // ShipDock Routes
 // Route::apiResource('ship-docks', ShipDockController::class);

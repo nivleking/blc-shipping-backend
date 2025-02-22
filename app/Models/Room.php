@@ -29,8 +29,9 @@ class Room extends Model
     ];
 
     protected $casts = [
-        'users' => 'array',
+        'bay_size' => 'array',
         'bay_types' => 'array',
+        'users' => 'array'
     ];
 
     public function users()

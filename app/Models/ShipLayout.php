@@ -9,5 +9,22 @@ class ShipLayout extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['bay_size', 'bay_count'];
+    protected $fillable = [
+        'name',
+        'description',
+        'bay_size',
+        'bay_count',
+        'bay_types',
+        'created_by'
+    ];
+
+    protected $casts = [
+        'bay_size' => 'array',
+        'bay_types' => 'array'
+    ];
+
+    public function creator()
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
 }

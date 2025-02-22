@@ -13,8 +13,12 @@ return new class extends Migration
     {
         Schema::create('ship_layouts', function (Blueprint $table) {
             $table->id();
-            $table->json('bay_size')->nullable();
-            $table->integer('bay_count')->default(0);
+            $table->string('name');
+            $table->text('description')->nullable();
+            $table->json('bay_size');
+            $table->integer('bay_count');
+            $table->json('bay_types');
+            $table->foreignId('created_by')->constrained('users');
             $table->timestamps();
         });
     }

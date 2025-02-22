@@ -41,7 +41,8 @@ class User extends Authenticatable
         'last_login_at' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
-        'login_count' => 'integer'
+        'login_count' => 'integer',
+        'is_admin' => 'boolean',
     ];
 
     protected $appends = ['password_plain'];

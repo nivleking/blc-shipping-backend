@@ -96,6 +96,7 @@ Route::get('containers/{container}', [ContainerController::class, 'show']);
 
 // Basic Room Routes
 Route::middleware('auth:sanctum')->group(function () {
+    Route::get('rooms/available-users', [RoomController::class, 'getAvailableUsers']);
     Route::get('rooms', [RoomController::class, 'index'])->middleware('admin');
     Route::post('rooms', [RoomController::class, 'store'])->middleware('admin');
     Route::get('rooms/{room}', [RoomController::class, 'show']);

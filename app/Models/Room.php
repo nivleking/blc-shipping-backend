@@ -18,6 +18,7 @@ class Room extends Model
         'name',
         'description',
         'users',
+        'assigned_users',
         'status',
         'deck_id',
         'max_users',
@@ -31,7 +32,8 @@ class Room extends Model
     protected $casts = [
         'bay_size' => 'array',
         'bay_types' => 'array',
-        'users' => 'array'
+        'users' => 'array',
+        'assigned_users' => 'array'
     ];
 
     public function users()

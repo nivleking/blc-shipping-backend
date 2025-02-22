@@ -29,6 +29,8 @@ class RoomController extends Controller
             'description' => 'required|string',
             'deck' => 'required|exists:decks,id',
             'max_users' => 'required|integer',
+            'assigned_users' => 'required|array|min:1',
+            'assigned_users.*' => 'exists:users,id',
             'ship_layout' => 'required|exists:ship_layouts,id',
             'total_rounds' => 'required|integer|min:1',
             'cards_limit_per_round' => 'required|integer|min:1',
@@ -45,12 +47,13 @@ class RoomController extends Controller
                 'description' => $validated['description'],
                 'deck_id' => $validated['deck'],
                 'max_users' => $validated['max_users'],
+                'users' => json_encode([]),
+                'assigned_users' => json_encode($validated['assigned_users']),
                 'bay_size' => json_encode($layout->bay_size),
                 'bay_count' => $layout->bay_count,
                 'bay_types' => json_encode($layout->bay_types),
                 'total_rounds' => $validated['total_rounds'],
                 'cards_limit_per_round' => $validated['cards_limit_per_round'],
-                'users' => json_encode([]),
             ]);
 
             return response()->json($room, 200);
@@ -98,7 +101,30 @@ class RoomController extends Controller
     public function joinRoom(Request $request, Room $room)
     {
         $user = $request->user();
-        $users = json_decode($room->users, true);
+        $assignedUsers = json_decode($room->assigned_users, true) ?? [];
+
+        if (!in_array($user->id, $assignedUsers)) {
+            return response()->json([
+                'message' => 'You are not authorized to join this room'
+            ], 403);
+        }
+
+        $users = json_decode($room->users, true) ?? [];
+
+        // Check if user is already in the room
+        if (in_array($user->id, $users)) {
+            return response()->json([
+                'message' => 'You are already in this room'
+            ], 400);
+        }
+
+        // Check if room is full
+        if (count($users) >= $room->max_users) {
+            return response()->json([
+                'message' => 'Room is full'
+            ], 400);
+        }
+
         $users[] = $user->id;
         $room->users = json_encode($users);
         $room->save();
@@ -378,5 +404,15 @@ class RoomController extends Controller
         $ranking = $shipBays->sortByDesc('total_revenue')->values();
 
         return response()->json($ranking);
+    }
+
+    public function getAvailableUsers()
+    {
+        $users = User::where('is_admin', false)
+            ->where('status', 'active')
+            ->select('id', 'name')
+            ->get();
+
+        return response()->json($users);
     }
 }

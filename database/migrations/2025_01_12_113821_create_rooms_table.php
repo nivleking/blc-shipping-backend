@@ -19,12 +19,13 @@ return new class extends Migration
             $table->text('description');
             $table->string('status')->default('created');
             $table->integer('max_users')->default(0);
+            $table->json('users')->nullable();
+            $table->json('assigned_users')->nullable();
             $table->json('bay_size')->nullable();
             $table->integer('bay_count')->default(0);
             $table->json('bay_types')->nullable();
             $table->integer('total_rounds')->default(1);
             $table->integer('cards_limit_per_round')->default(1);
-            $table->json('users')->nullable();
             $table->timestamps();
         });
     }

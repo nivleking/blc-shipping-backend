@@ -46,6 +46,7 @@ class RoomController extends Controller
                 'name' => $validated['name'],
                 'description' => $validated['description'],
                 'deck_id' => $validated['deck'],
+                'ship_layout_id' => $validated['ship_layout'],
                 'max_users' => $validated['max_users'],
                 'users' => json_encode([]),
                 'assigned_users' => json_encode($validated['assigned_users']),
@@ -81,9 +82,36 @@ class RoomController extends Controller
         $validated = $request->validate([
             'name' => 'string',
             'description' => 'string',
+            'total_rounds' => 'integer|min:1',
+            'cards_limit_per_round' => 'integer|min:1',
+            'assigned_users' => 'array',
+            'assigned_users.*' => 'exists:users,id',
+            'deck' => 'exists:decks,id',
+            'ship_layout' => 'exists:ship_layouts,id',
         ]);
 
-        $room->update($validated);
+        $room->name = $validated['name'];
+        $room->description = $validated['description'];
+        $room->total_rounds = $validated['total_rounds'];
+        $room->cards_limit_per_round = $validated['cards_limit_per_round'];
+
+        if (isset($validated['assigned_users'])) {
+            $room->assigned_users = json_encode($validated['assigned_users']);
+        }
+
+        if (isset($validated['deck'])) {
+            $room->deck_id = $validated['deck'];
+        }
+
+        if (isset($validated['ship_layout'])) {
+            $layout = ShipLayout::findOrFail($validated['ship_layout']);
+            $room->ship_layout_id = $validated['ship_layout'];
+            $room->bay_size = json_encode($layout->bay_size);
+            $room->bay_count = $layout->bay_count;
+            $room->bay_types = json_encode($layout->bay_types);
+        }
+
+        $room->save();
 
         return response()->json($room);
     }
@@ -269,7 +297,10 @@ class RoomController extends Controller
     public function getRoomUsers(Request $request, Room $room)
     {
         $userIds = json_decode($room->users, true);
-        $users = User::whereIn('id', $userIds)->get();
+
+        $users = User::whereIn('id', $userIds)
+            ->distinct()
+            ->get();
 
         return response()->json($users);
     }
@@ -393,8 +424,11 @@ class RoomController extends Controller
     {
         $room = Room::findOrFail($roomId);
         $userIds = json_decode($room->users, true);
+
         $shipBays = ShipBay::with('user:id,name')
             ->whereIn('user_id', $userIds)
+            ->where('room_id', $roomId)
+            ->distinct('user_id')
             ->get()
             ->map(function ($shipBay) {
                 $shipBay->total_revenue = $shipBay->revenue - $shipBay->penalty;

@@ -15,6 +15,7 @@ return new class extends Migration
             $table->string('id')->primary();
             $table->foreignId('admin_id')->constrained('users')->cascadeOnDelete();
             $table->foreignId('deck_id')->nullable()->constrained('decks')->cascadeOnDelete();
+            $table->foreignId('ship_layout_id')->nullable()->constrained('ship_layouts');
             $table->string('name');
             $table->text('description');
             $table->string('status')->default('created');

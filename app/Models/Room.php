@@ -15,6 +15,7 @@ class Room extends Model
     protected $fillable = [
         'id',
         'admin_id',
+        'ship_layout_id',
         'name',
         'description',
         'users',
@@ -49,5 +50,10 @@ class Room extends Model
     public function deck()
     {
         return $this->belongsTo(Deck::class);
+    }
+
+    public function shipLayout()
+    {
+        return $this->belongsTo(ShipLayout::class);
     }
 }

@@ -27,14 +27,16 @@ class Room extends Model
         'bay_count',
         'bay_types',
         'total_rounds',
-        'cards_limit_per_round'
+        'cards_limit_per_round',
+        'swap_config'
     ];
 
     protected $casts = [
         'bay_size' => 'array',
         'bay_types' => 'array',
         'users' => 'array',
-        'assigned_users' => 'array'
+        'assigned_users' => 'array',
+        'swap_config'
     ];
 
     public function users()

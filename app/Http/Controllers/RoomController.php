@@ -34,6 +34,7 @@ class RoomController extends Controller
             'ship_layout' => 'required|exists:ship_layouts,id',
             'total_rounds' => 'required|integer|min:1',
             'cards_limit_per_round' => 'required|integer|min:1',
+            'swap_config' => 'nullable|array'
         ]);
 
         $admin = $request->user();
@@ -55,6 +56,7 @@ class RoomController extends Controller
                 'bay_types' => json_encode($layout->bay_types),
                 'total_rounds' => $validated['total_rounds'],
                 'cards_limit_per_round' => $validated['cards_limit_per_round'],
+                'swap_config' => json_encode($validated['swap_config'] ?? [])
             ]);
 
             return response()->json($room, 200);
@@ -193,20 +195,42 @@ class RoomController extends Controller
             return response()->json(['message' => 'Not enough users to swap bays'], 400);
         }
 
-        $shipBays = ShipBay::whereIn('user_id', $userIds)->get()->keyBy('user_id');
+        $shipBays = ShipBay::whereIn('user_id', $userIds)
+            ->where('room_id', $room->id)
+            ->get();
 
-        $firstUserId = $userIds[0];
-        $lastUserId = $userIds[count($userIds) - 1];
-        $firstUserBay = $shipBays[$firstUserId];
-        $lastUserBay = $shipBays[$lastUserId];
+        // Get the swap configuration
+        $swapConfig = json_decode($room->swap_config, true);
 
-        $tempArena = $firstUserBay->arena;
-        for ($i = 0; $i < count($userIds) - 1; $i++) {
-            $shipBays[$userIds[$i]]->arena = $shipBays[$userIds[$i + 1]]->arena;
-            $shipBays[$userIds[$i]]->save();
+        if (empty($swapConfig)) {
+            return response()->json(['message' => 'No swap configuration found'], 400);
         }
-        $lastUserBay->arena = $tempArena;
-        $lastUserBay->save();
+
+        // Create maps for lookup
+        $baysByPort = [];
+        $originalArenas = [];
+
+        foreach ($shipBays as $bay) {
+            $baysByPort[$bay->port] = $bay;
+            $originalArenas[$bay->port] = $bay->arena;
+        }
+
+        // Perform the swaps according to the configuration
+        foreach ($swapConfig as $fromPort => $toPort) {
+            if (isset($baysByPort[$fromPort]) && isset($originalArenas[$toPort])) {
+                $sourceBay = $baysByPort[$fromPort];
+                $sourceBay->arena = $originalArenas[$toPort];
+                $sourceBay->save();
+            }
+        }
+
+        // Increment round counter for all ship bays in this room
+        ShipBay::where('room_id', $room->id)
+            ->update([
+                'current_round' => DB::raw('current_round + 1'),
+                'current_round_cards' => 0, // Reset cards count for new round
+                'section' => 'section1' // Reset section
+            ]);
 
         return response()->json(['message' => 'Bays swapped successfully']);
     }
@@ -399,9 +423,12 @@ class RoomController extends Controller
     public function acceptCardTemporary(Request $request)
     {
         $validated = $request->validate([
+            'room_id' => 'required|exists:rooms,id',
             'card_temporary_id' => 'required|exists:cards,id',
         ]);
-        $cardTemporary = CardTemporary::where('card_id', $validated['card_temporary_id'])->first();
+        $cardTemporary = CardTemporary::where('card_id', $validated['card_temporary_id'])
+            ->where('room_id', $validated['room_id'])
+            ->first();
         $cardTemporary->status = 'accepted';
         $cardTemporary->save();
 
@@ -411,9 +438,12 @@ class RoomController extends Controller
     public function rejectCardTemporary(Request $request)
     {
         $validated = $request->validate([
+            'room_id' => 'required|exists:rooms,id',
             'card_temporary_id' => 'required|exists:cards,id',
         ]);
-        $cardTemporary = CardTemporary::where('card_id', $validated['card_temporary_id'])->first();
+        $cardTemporary = CardTemporary::where('card_id', $validated['card_temporary_id'])
+            ->where('room_id', $validated['room_id'])
+            ->first();
         $cardTemporary->status = 'rejected';
         $cardTemporary->save();
 

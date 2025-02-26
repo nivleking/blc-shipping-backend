@@ -479,4 +479,19 @@ class RoomController extends Controller
 
         return response()->json($users);
     }
+
+    public function updateSwapConfig(Request $request, Room $room)
+    {
+        $request->validate([
+            'swap_config' => 'required|array',
+        ]);
+
+        $room->swap_config = json_encode($request->swap_config);
+        $room->save();
+
+        return response()->json([
+            'message' => 'Swap configuration updated successfully',
+            'swap_config' => json_decode($room->swap_config),
+        ]);
+    }
 }

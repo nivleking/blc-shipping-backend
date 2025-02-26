@@ -413,11 +413,10 @@ class RoomController extends Controller
 
     public function getCardTemporaries($roomId, $userId)
     {
-        $cardTemporaries = CardTemporary::where('room_id', $roomId)
+        return CardTemporary::where('room_id', $roomId)
             ->where('user_id', $userId)
+            ->with('card') // This will eager load the card relationship
             ->get();
-
-        return response()->json($cardTemporaries);
     }
 
     public function acceptCardTemporary(Request $request)

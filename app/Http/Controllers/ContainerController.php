@@ -28,7 +28,7 @@ class ContainerController extends Controller
      */
     public function show(Container $container)
     {
-        return $container->load('card');
+        return $container->load(['card:id,destination,type,quantity']);
     }
 
     /**

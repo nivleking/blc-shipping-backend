@@ -466,43 +466,40 @@ class RoomController extends Controller
         shuffle($containerPlacements);
         $placementsToUse = array_slice($containerPlacements, 0, $targetContainerCount);
 
-        // Get the ports from the room's deck
-        $room = Room::where(function ($query) use ($userPort, $allPorts) {
-            $query->whereJsonContains('users', array_keys($allPorts)[0] ?? null);
+        // Get the room based on user ID from allPorts
+        $userId = array_search($userPort, $allPorts);
+        $room = Room::where('id', function ($query) use ($userId, $allPorts) {
+            $query->select('room_id')
+                ->from('ship_bays')
+                ->where('user_id', $userId);
         })->first();
 
-        $deckPorts = [];
-        if ($room) {
-            $deck = Deck::find($room->deck_id);
-            if ($deck) {
-                $deckPorts = $deck->cards()->pluck('origin')->unique()->toArray();
-
-                // Add destination ports too
-                $destinationPorts = $deck->cards()->pluck('destination')->unique()->toArray();
-                $deckPorts = array_unique(array_merge($deckPorts, $destinationPorts));
-            }
+        if (!$room) {
+            Log::warning("Room not found for user port: $userPort");
+            return $arena; // Return empty arena if room not found
         }
 
-        // Combine deck ports with the ports from the room
-        $allPortsList = array_values($allPorts);
-
-        // Add deck ports if they're not already in the list
-        foreach ($deckPorts as $port) {
-            if (!in_array($port, $allPortsList) && !empty($port)) {
-                $allPortsList[] = $port;
-            }
+        // Get ports from deck
+        $validPorts = [];
+        $deck = Deck::find($room->deck_id);
+        if ($deck) {
+            // Get unique origin and destination ports from deck cards
+            $originPorts = $deck->cards()->distinct('origin')->pluck('origin')->toArray();
+            $destPorts = $deck->cards()->distinct('destination')->pluck('destination')->toArray();
+            $validPorts = array_values(array_unique(array_merge($originPorts, $destPorts)));
         }
 
-        // If less than 3 ports, add some defaults
-        if (count($allPortsList) < 3) {
-            $defaultPorts = ['SBY', 'MKS', 'MDN', 'JYP', 'BPN', 'BKS'];
-            foreach ($defaultPorts as $port) {
-                if (!in_array($port, $allPortsList)) {
-                    $allPortsList[] = $port;
-                    if (count($allPortsList) >= 6) break;
-                }
-            }
+        // Filter out empty port values
+        $validPorts = array_filter($validPorts, function ($port) {
+            return !empty($port);
+        });
+
+        // If no valid ports found, use ports from allPorts
+        if (empty($validPorts)) {
+            $validPorts = array_values($allPorts);
         }
+
+        Log::info("Valid ports for room {$room->id}: ", $validPorts);
 
         // Get a starting ID for cards
         $nextId = 1;
@@ -529,21 +526,24 @@ class RoomController extends Controller
             }
 
             // Randomize whether container is for loading or unloading
-            $isForUnloading = (rand(1, 10) <= 6); // 60% chance for unloading (container already on ship)
+            $isForUnloading = (rand(1, 10) <= 6); // 60% chance for unloading
+
+            // Get valid ports excluding current user port
+            $availablePorts = array_values(array_diff($validPorts, [$userPort]));
+
+            // If no other ports available, skip creating this container
+            if (empty($availablePorts)) {
+                continue;
+            }
 
             if ($isForUnloading) {
                 // UNLOADING SCENARIO: Container is on the ship and will be unloaded at current port
-                do {
-                    $originPort = $allPortsList[array_rand($allPortsList)];
-                } while ($originPort === $userPort);
-
+                $originPort = $availablePorts[array_rand($availablePorts)];
                 $destinationPort = $userPort;
             } else {
                 // LOADING SCENARIO: Container is waiting at port to be loaded onto ship
                 $originPort = $userPort;
-                do {
-                    $destinationPort = $allPortsList[array_rand($allPortsList)];
-                } while ($destinationPort === $userPort);
+                $destinationPort = $availablePorts[array_rand($availablePorts)];
             }
 
             // Generate card ID (using incrementing numeric ID)

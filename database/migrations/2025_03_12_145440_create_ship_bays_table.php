@@ -19,9 +19,9 @@ return new class extends Migration
             $table->string('port');
             $table->json('arena');
             $table->string('section')->default('section1');
-            $table->unsignedBigInteger('revenue')->default(0);
-            $table->unsignedBigInteger('penalty')->default(0);
-            $table->unsignedBigInteger('total_revenue')->default(0);
+            $table->bigInteger('revenue')->default(0);
+            $table->bigInteger('penalty')->default(0);
+            $table->bigInteger('total_revenue')->default(0);
             $table->unsignedBigInteger('discharge_moves')->default(0);
             $table->unsignedBigInteger('load_moves')->default(0);
             $table->unsignedBigInteger('accepted_cards')->default(0);

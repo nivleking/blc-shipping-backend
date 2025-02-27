@@ -77,4 +77,22 @@ class DeckController extends Controller
         $deck->cards()->detach($card->id);
         return response()->json(['message' => 'Card removed from deck']);
     }
+
+    public function removeAllCards(Deck $deck)
+    {
+        try {
+            $cards = $deck->cards;
+
+            $deck->cards()->detach();
+
+            foreach ($cards as $card) {
+                $card->containers()->delete();
+                $card->delete();
+            }
+
+            return response()->json(['message' => 'All cards removed from deck successfully']);
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Failed to remove cards'], 500);
+        }
+    }
 }

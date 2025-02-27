@@ -16,6 +16,11 @@ class CardController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
+            'id' => [
+                'required',
+                'string',
+                'unique:cards,id',
+            ],
             'priority' => 'required|string',
             'origin' => 'required|string',
             'destination' => 'required|string',
@@ -23,8 +28,15 @@ class CardController extends Controller
             'revenue' => 'required|integer',
         ]);
 
-        $nextId = Card::max('id') + 1;
-        $validated['type'] = ($nextId % 5 == 0) ? 'Reefer' : 'Dry';
+        $numericId = intval($validated['id']);
+        if ($numericId < 1 || $numericId > 99999) {
+            return response()->json([
+                'message' => 'ID must be a number between 1 and 99999',
+                'errors' => ['id' => ['Invalid ID range']]
+            ], 422);
+        }
+
+        $validated['type'] = ($numericId % 5 === 0) ? 'Reefer' : 'Dry';
 
         $card = Card::create($validated);
 
@@ -95,6 +107,10 @@ class CardController extends Controller
         $id = 1;
 
         foreach ($ports as $originPort) {
+            while (Card::where('id', $id)->exists()) {
+                $id++;
+            }
+
             // Pre-distribute containers (ensuring total 15)
             $quantities = array_fill(0, $salesCallsCount, 1);
             $remainingContainers = $targetContainers - $salesCallsCount;
@@ -110,7 +126,7 @@ class CardController extends Controller
             $portCalls = [];
 
             for ($i = 0; $i < $salesCallsCount; $i++) {
-                $containerType = ($id % 5 == 0) ? "Reefer" : "Dry";
+                $containerType = ($id % 5 == 0) ? "reefer" : "dry";
 
                 do {
                     $destinationPort = $ports[array_rand($ports)];
@@ -129,7 +145,7 @@ class CardController extends Controller
                 $portRevenue += $revenue;
 
                 $portCalls[] = [
-                    'id' => $id,
+                    'id' => (string)$id, // Convert to string as per validation
                     'type' => $containerType,
                     'priority' => rand(0, 1) ? "Committed" : "Non-Committed",
                     'origin' => $originPort,
@@ -164,6 +180,7 @@ class CardController extends Controller
         // Save to database
         foreach ($salesCalls as $salesCallData) {
             $salesCall = Card::create([
+                'id' => $salesCallData['id'],
                 'type' => $salesCallData['type'],
                 'priority' => $salesCallData['priority'],
                 'origin' => $salesCallData['origin'],

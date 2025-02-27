@@ -16,7 +16,8 @@ return new class extends Migration
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
             $table->string('room_id');
             $table->foreign('room_id')->references('id')->on('rooms')->onDelete('cascade');
-            $table->foreignId('card_id')->constrained('cards', 'id')->onDelete('cascade');
+            $table->string('card_id');
+            $table->foreign('card_id')->references('id')->on('cards')->onDelete('cascade');
             $table->string('status')->default('selected');
             $table->timestamps();
         });

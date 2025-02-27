@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Card;
 use App\Models\CardTemporary;
+use App\Models\Container;
 use App\Models\Room;
 use App\Models\Deck;
 use App\Models\ShipBay;
@@ -345,28 +347,254 @@ class RoomController extends Controller
         ]);
 
         $ports = $request->input('ports');
+        $shipBays = [];
+
+        // Get room configuration for bay setup
+        $baySize = json_decode($room->bay_size, true);
+        $bayCount = $room->bay_count;
+        $bayTypes = json_decode($room->bay_types, true);
+
+        // Default values if not set
+        if (!$baySize) $baySize = ['rows' => 4, 'columns' => 5];
+        if (!$bayCount) $bayCount = 3;
+        if (!$bayTypes) $bayTypes = ['dry', 'dry', 'reefer'];
 
         foreach ($ports as $userId => $port) {
             $user = User::find($userId);
 
             if ($user) {
-                ShipBay::updateOrCreate(
-                    ['user_id' => $user->id, 'room_id' => $room->id],
-                    ['port' => $port, 'arena' => json_encode([])]
+                // Create empty arena
+                $arena = array_fill(
+                    0,
+                    $bayCount,
+                    array_fill(
+                        0,
+                        $baySize['rows'],
+                        array_fill(0, $baySize['columns'], null)
+                    )
                 );
+
+                // Populate with initial containers
+                $arena = $this->generateInitialContainers($arena, $port, $ports, $bayTypes);
+
+                // Create or update ShipBay
+                $shipBay = ShipBay::updateOrCreate(
+                    ['user_id' => $user->id, 'room_id' => $room->id],
+                    [
+                        'port' => $port,
+                        'arena' => json_encode($arena),
+                        'revenue' => 0,
+                        'section' => 'section1',
+                        'penalty' => 0,
+                        'discharge_moves' => 0,
+                        'load_moves' => 0,
+                        'accepted_cards' => 0,
+                        'rejected_cards' => 0,
+                        'current_round' => 1,
+                        'current_round_cards' => 0,
+                    ]
+                );
+
+                $shipBays[] = $shipBay;
             }
         }
-
-        $shipbays = ShipBay::where('room_id', $room->id)->get();
 
         return response()->json(
             [
                 'message' => 'Ports set successfully',
                 'ports' => $ports,
-                'shipbays' => $shipbays,
+                'shipbays' => $shipBays,
             ],
             200
         );
+    }
+
+    /**
+     * Generate initial containers for a ship bay
+     *
+     * @param array $arena Empty arena to populate
+     * @param string $userPort Current user's port
+     * @param array $allPorts All ports in the game
+     * @param array $bayTypes Types of bays
+     * @return array Populated arena
+     */
+    private function generateInitialContainers($arena, $userPort, $allPorts, $bayTypes)
+    {
+        // Calculate overall dimensions
+        $bayCount = count($arena);
+        $rowCount = count($arena[0]);
+        $colCount = count($arena[0][0]);
+        $totalCells = $bayCount * $rowCount * $colCount;
+
+        // Target 20-30% of cells to contain containers
+        $targetContainerCount = rand(intval($totalCells * 0.2), intval($totalCells * 0.3));
+
+        // Create list of possible container placements
+        $containerPlacements = [];
+
+        // First, fill some of the bottom row (70% chance per cell)
+        for ($bay = 0; $bay < $bayCount; $bay++) {
+            for ($col = 0; $col < $colCount; $col++) {
+                if (rand(1, 10) <= 7) {
+                    $containerPlacements[] = [
+                        'bay' => $bay,
+                        'row' => $rowCount - 1, // Bottom row
+                        'col' => $col
+                    ];
+                }
+            }
+        }
+
+        // Add some in second-to-bottom row if needed (where there's a container below)
+        if (count($containerPlacements) < $targetContainerCount && $rowCount > 1) {
+            foreach ($containerPlacements as $placement) {
+                $bay = $placement['bay'];
+                $col = $placement['col'];
+
+                // 40% chance to stack on existing container
+                if (rand(1, 10) <= 4) {
+                    $containerPlacements[] = [
+                        'bay' => $bay,
+                        'row' => $rowCount - 2, // Second to bottom row
+                        'col' => $col
+                    ];
+                }
+            }
+        }
+
+        // Shuffle to randomize which ones we'll use
+        shuffle($containerPlacements);
+        $placementsToUse = array_slice($containerPlacements, 0, $targetContainerCount);
+
+        // Get the ports from the room's deck
+        $room = Room::where(function ($query) use ($userPort, $allPorts) {
+            $query->whereJsonContains('users', array_keys($allPorts)[0] ?? null);
+        })->first();
+
+        $deckPorts = [];
+        if ($room) {
+            $deck = Deck::find($room->deck_id);
+            if ($deck) {
+                $deckPorts = $deck->cards()->pluck('origin')->unique()->toArray();
+
+                // Add destination ports too
+                $destinationPorts = $deck->cards()->pluck('destination')->unique()->toArray();
+                $deckPorts = array_unique(array_merge($deckPorts, $destinationPorts));
+            }
+        }
+
+        // Combine deck ports with the ports from the room
+        $allPortsList = array_values($allPorts);
+
+        // Add deck ports if they're not already in the list
+        foreach ($deckPorts as $port) {
+            if (!in_array($port, $allPortsList) && !empty($port)) {
+                $allPortsList[] = $port;
+            }
+        }
+
+        // If less than 3 ports, add some defaults
+        if (count($allPortsList) < 3) {
+            $defaultPorts = ['SBY', 'MKS', 'MDN', 'JYP', 'BPN', 'BKS'];
+            foreach ($defaultPorts as $port) {
+                if (!in_array($port, $allPortsList)) {
+                    $allPortsList[] = $port;
+                    if (count($allPortsList) >= 6) break;
+                }
+            }
+        }
+
+        // Get a starting ID for cards
+        $nextId = 1;
+        while (Card::where('id', (string)$nextId)->exists()) {
+            $nextId++;
+        }
+
+        // Create containers and place them in arena
+        foreach ($placementsToUse as $placement) {
+            $bay = $placement['bay'];
+            $row = $placement['row'];
+            $col = $placement['col'];
+
+            // Skip if cell is already occupied
+            if ($arena[$bay][$row][$col] !== null) continue;
+
+            // Determine container type based on bay type
+            $bayType = $bayTypes[$bay] ?? 'dry';
+            $containerType = $bayType === 'reefer' ? 'reefer' : (rand(1, 10) <= 8 ? 'dry' : 'reefer');
+
+            // For reefer containers, only allow in reefer bays
+            if ($containerType === 'reefer' && $bayType !== 'reefer') {
+                continue;
+            }
+
+            // Randomize whether container is for loading or unloading
+            $isForUnloading = (rand(1, 10) <= 6); // 60% chance for unloading (container already on ship)
+
+            if ($isForUnloading) {
+                // UNLOADING SCENARIO: Container is on the ship and will be unloaded at current port
+                do {
+                    $originPort = $allPortsList[array_rand($allPortsList)];
+                } while ($originPort === $userPort);
+
+                $destinationPort = $userPort;
+            } else {
+                // LOADING SCENARIO: Container is waiting at port to be loaded onto ship
+                $originPort = $userPort;
+                do {
+                    $destinationPort = $allPortsList[array_rand($allPortsList)];
+                } while ($destinationPort === $userPort);
+            }
+
+            // Generate card ID (using incrementing numeric ID)
+            $cardId = (string)$nextId++;
+            $revenue = rand(5000000, 15000000);
+            $priority = rand(1, 10) <= 7 ? "Committed" : "Non-Committed"; // 70% committed
+
+            // Create container and card in database
+            $card = Card::create([
+                'id' => $cardId,
+                'type' => $containerType,
+                'priority' => $priority,
+                'origin' => $originPort,
+                'destination' => $destinationPort,
+                'quantity' => 1,
+                'revenue' => $revenue
+            ]);
+
+            $container = Container::create([
+                'color' => $this->generateContainerColor($destinationPort),
+                'card_id' => $cardId,
+                'type' => $containerType
+            ]);
+
+            // Place container in arena
+            $arena[$bay][$row][$col] = $container->id;
+        }
+
+        return $arena;
+    }
+
+    /**
+     * Generate color for container based on destination port
+     *
+     * @param string $destination Destination port code
+     * @return string Color name
+     */
+    private function generateContainerColor($destination)
+    {
+        $colorMap = [
+            'SBY' => 'red',
+            'MKS' => 'blue',
+            'MDN' => 'green',
+            'JYP' => 'yellow',
+            'BPN' => 'purple',
+            'BKS' => 'orange',
+            'BGR' => 'pink',
+            'BTH' => 'brown',
+        ];
+
+        return $colorMap[$destination] ?? 'gray';
     }
 
     public function getBayConfig($roomId)

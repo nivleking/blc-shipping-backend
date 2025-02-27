@@ -10,7 +10,8 @@ return new class extends Migration
     {
         Schema::create('card_deck', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('card_id')->constrained('cards')->onDelete('cascade');
+            $table->string('card_id');
+            $table->foreign('card_id')->references('id')->on('cards')->onDelete('cascade');
             $table->foreignId('deck_id')->constrained('decks')->onDelete('cascade');
             $table->timestamps();
         });

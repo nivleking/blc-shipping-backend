@@ -16,7 +16,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('cards', function (Blueprint $table) {
-            $table->string('id', 5)->primary();
+            $table->string('id')->primary();
             $table->string('type');
             $table->string('priority');
             $table->string('origin');

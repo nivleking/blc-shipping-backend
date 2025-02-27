@@ -16,16 +16,13 @@ class CardController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'id' => [
-                'required',
-                'string',
-                'unique:cards,id',
-            ],
+            'id' => 'required|string',
             'priority' => 'required|string',
             'origin' => 'required|string',
             'destination' => 'required|string',
             'quantity' => 'required|integer',
             'revenue' => 'required|integer',
+            'mode' => 'string',
         ]);
 
         $numericId = intval($validated['id']);
@@ -36,7 +33,19 @@ class CardController extends Controller
             ], 422);
         }
 
-        $validated['type'] = ($numericId % 5 === 0) ? 'Reefer' : 'Dry';
+        if (Card::where('id', $validated['id'])->exists()) {
+            if (isset($validated['mode']) && $validated['mode'] == "auto_generate") {
+                $validated['id'] = $this->getNextAvailableId();
+                $numericId = intval($validated['id']);
+            } else {
+                return response()->json([
+                    'message' => 'Card with this ID already exists',
+                ], 422);
+            }
+        }
+
+        // Ensure type is consistently formatted
+        $validated['type'] = ($numericId % 5 === 0) ? 'reefer' : 'dry';
 
         $card = Card::create($validated);
 
@@ -44,6 +53,7 @@ class CardController extends Controller
             $color = $this->generateContainerColor($card->destination);
             $card->containers()->create([
                 'color' => $color,
+                'type' => $validated['type'],
             ]);
         }
 
@@ -53,6 +63,15 @@ class CardController extends Controller
     public function show(Card $card)
     {
         return $card;
+    }
+
+    private function getNextAvailableId()
+    {
+        $id = 1;
+        while (Card::where('id', (string)$id)->exists()) {
+            $id++;
+        }
+        return (string)$id;
     }
 
     public function update(Request $request, Card $card)
@@ -106,11 +125,11 @@ class CardController extends Controller
         $salesCalls = [];
         $id = 1;
 
-        foreach ($ports as $originPort) {
-            while (Card::where('id', $id)->exists()) {
-                $id++;
-            }
+        while (Card::where('id', (string)$id)->exists()) {
+            $id++;
+        }
 
+        foreach ($ports as $originPort) {
             // Pre-distribute containers (ensuring total 15)
             $quantities = array_fill(0, $salesCallsCount, 1);
             $remainingContainers = $targetContainers - $salesCallsCount;
@@ -179,7 +198,8 @@ class CardController extends Controller
 
         // Save to database
         foreach ($salesCalls as $salesCallData) {
-            $salesCall = Card::create([
+            // Buat request baru dengan data sales call
+            $cardRequest = new Request([
                 'id' => $salesCallData['id'],
                 'type' => $salesCallData['type'],
                 'priority' => $salesCallData['priority'],
@@ -187,9 +207,19 @@ class CardController extends Controller
                 'destination' => $salesCallData['destination'],
                 'quantity' => $salesCallData['quantity'],
                 'revenue' => $salesCallData['revenue'],
+                'mode' => 'auto_generate', // Set mode ke auto_generate
             ]);
 
-            $deck->cards()->attach($salesCall->id);
+            // Panggil store method dengan request baru
+            $response = $this->store($cardRequest);
+
+            // Parse response JSON untuk mendapatkan card
+            $responseData = json_decode($response->getContent());
+            $salesCall = Card::find($responseData->id);
+
+            if ($salesCall) {
+                $deck->cards()->attach($salesCall->id);
+            }
 
             for ($i = 0; $i < $salesCallData['quantity']; $i++) {
                 $salesCall->containers()->create([

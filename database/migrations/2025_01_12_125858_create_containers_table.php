@@ -12,7 +12,8 @@ return new class extends Migration
             $table->id();
             $table->string('color');
             $table->string('type')->default('dry');
-            $table->foreignId('card_id')->constrained()->onDelete('cascade');
+            $table->string('card_id');
+            $table->foreign('card_id')->references('id')->on('cards')->onDelete('cascade');
             $table->timestamps();
         });
     }

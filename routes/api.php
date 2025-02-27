@@ -122,7 +122,6 @@ Route::post('card-temporary/accept', [RoomController::class, 'acceptCardTemporar
 Route::post('card-temporary/reject', [RoomController::class, 'rejectCardTemporary'])->middleware('auth:sanctum');
 Route::get('rooms/{room}/rankings', [RoomController::class, 'getUsersRanking'])->middleware('auth:sanctum');
 Route::put('/rooms/{room}/swap-config', [RoomController::class, 'updateSwapConfig'])->middleware('auth:sanctum');
-Route::get('rooms/{room}/check-final-phase', [RoomController::class, 'checkFinalPhase'])->middleware('auth:sanctum');
 
 // ShipBay Routes
 Route::get('ship-bays', [ShipBayController::class, 'index']);

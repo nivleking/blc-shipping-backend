@@ -75,37 +75,28 @@ class RoomController extends Controller
 
     public function update(Request $request, Room $room)
     {
-        // Handle status updates
         if ($request->has('status')) {
             $room->status = $request->status;
             $room->save();
             return response()->json($room);
         }
 
-        // Handle regular updates
         $validated = $request->validate([
-            'name' => 'required|string',
-            'description' => 'required|string',
-            'total_rounds' => 'required|integer|min:1',
-            'cards_limit_per_round' => 'required|integer|min:1',
-            'is_final_unloading' => 'boolean',
+            'name' => 'string',
+            'description' => 'string',
+            'total_rounds' => 'integer|min:1',
+            'cards_limit_per_round' => 'integer|min:1',
             'assigned_users' => 'array',
             'assigned_users.*' => 'exists:users,id',
             'deck' => 'exists:decks,id',
             'ship_layout' => 'exists:ship_layouts,id',
         ]);
 
-        // Update room properties
         $room->name = $validated['name'];
         $room->description = $validated['description'];
         $room->total_rounds = $validated['total_rounds'];
         $room->cards_limit_per_round = $validated['cards_limit_per_round'];
 
-        if (isset($validated['is_final_unloading'])) {
-            $room->is_final_unloading = $validated['is_final_unloading'];
-        }
-
-        // Handle optional fields
         if (isset($validated['assigned_users'])) {
             $room->assigned_users = json_encode($validated['assigned_users']);
         }
@@ -500,25 +491,6 @@ class RoomController extends Controller
         return response()->json([
             'message' => 'Swap configuration updated successfully',
             'swap_config' => json_decode($room->swap_config),
-        ]);
-    }
-
-    public function checkFinalPhase(Room $room)
-    {
-        $shipBay = ShipBay::where('room_id', $room->id)->first();
-
-        if (!$shipBay) {
-            return response()->json(['isFinalPhase' => false]);
-        }
-
-        $isFinalPhase = ($shipBay->current_round >= $room->total_rounds &&
-            $shipBay->section === 'section2');
-
-        return response()->json([
-            'isFinalPhase' => $isFinalPhase,
-            'currentRound' => $shipBay->current_round,
-            'totalRounds' => $room->total_rounds,
-            'currentSection' => $shipBay->section
         ]);
     }
 }

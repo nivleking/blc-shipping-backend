@@ -28,6 +28,7 @@ return new class extends Migration
             $table->integer('total_rounds')->default(1);
             $table->integer('cards_limit_per_round')->default(1);
             $table->json('swap_config')->nullable();
+            $table->boolean('is_final_unloading')->default(false);
             $table->timestamps();
         });
     }

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\CapacityUptakeController;
 use App\Http\Controllers\ContainerController;
 use App\Http\Controllers\RoomController;
 use App\Http\Controllers\CardController;
@@ -163,3 +164,9 @@ Route::post('simulation-logs', [SimulationLogController::class, 'store'])->middl
 Route::get('simulation-logs/{simulationLog}', [SimulationLogController::class, 'show'])->middleware('auth:sanctum', 'admin');
 // Route::put('simulation-logs/{simulationLog}', [SimulationLogController::class, 'update'])->middleware('auth:sanctum', 'admin');
 Route::delete('simulation-logs/{simulationLog}', [SimulationLogController::class, 'destroy'])->middleware('auth:sanctum', 'admin');
+Route::get('simulation-logs/{roomId}/{userId}', [SimulationLogController::class, 'getByRoomAndUser']);
+
+// Capacity Uptake Routes
+Route::get('/capacity-uptake/weeks/{roomId}/{userId}', [CapacityUptakeController::class, 'getWeeksByRoomUser']);
+Route::get('/capacity-uptake/{roomId}/{userId}/{week}', [CapacityUptakeController::class, 'getByRoomUserWeek']);
+Route::post('/capacity-uptake', [CapacityUptakeController::class, 'saveOrUpdate']);

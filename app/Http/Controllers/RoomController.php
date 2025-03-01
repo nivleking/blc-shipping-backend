@@ -427,7 +427,7 @@ class RoomController extends Controller
         $totalCells = $bayCount * $rowCount * $colCount;
 
         // Target 20-30% of cells to contain containers
-        $targetContainerCount = rand(intval($totalCells * 0.2), intval($totalCells * 0.3));
+        $targetContainerCount = rand(intval($totalCells * 0.1), intval($totalCells * 0.15));
 
         // Create list of possible container placements
         $containerPlacements = [];
@@ -468,16 +468,15 @@ class RoomController extends Controller
 
         // Get the room based on user ID from allPorts
         $userId = array_search($userPort, $allPorts);
-        $room = Room::where('id', function ($query) use ($userId, $allPorts) {
-            $query->select('room_id')
-                ->from('ship_bays')
-                ->where('user_id', $userId);
-        })->first();
+
+        // Fix for cardinality violation - get the room directly from the input parameters
+        $room = Room::find(request()->route('room')->id);
 
         if (!$room) {
             Log::warning("Room not found for user port: $userPort");
             return $arena; // Return empty arena if room not found
         }
+
 
         // Get ports from deck
         $validPorts = [];

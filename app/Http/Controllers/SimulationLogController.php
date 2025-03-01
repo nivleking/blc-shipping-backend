@@ -41,4 +41,14 @@ class SimulationLogController extends Controller
         // Delete
         // $simulationLog->delete();
     }
+
+    public function getByRoomAndUser($roomId, $userId)
+    {
+        $logs = SimulationLog::where('room_id', $roomId)
+            ->where('user_id', $userId)
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        return response()->json($logs);
+    }
 }

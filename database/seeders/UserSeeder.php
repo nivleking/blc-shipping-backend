@@ -13,40 +13,44 @@ class UserSeeder extends Seeder
      */
     public function run(): void
     {
-        $user = new User();
-        $user->name = 'user1';
-        $user->email = 'user1@mail.com';
-        $user->is_admin = false;
-        $user->password = bcrypt('12');
-        $user->save();
+        // $user = new User();
+        // $user->name = 'user1';
+        // $user->email = 'user1@mail.com';
+        // $user->is_admin = false;
+        // $user->password = bcrypt('12');
+        // $user->save();
 
-        $user = new User();
-        $user->name = 'user2';
-        $user->email = 'user2@mail.com';
-        $user->is_admin = false;
-        $user->password = bcrypt('12');
-        $user->save();
+        // $user = new User();
+        // $user->name = 'user2';
+        // $user->email = 'user2@mail.com';
+        // $user->is_admin = false;
+        // $user->password = bcrypt('12');
+        // $user->save();
 
-        $user = new User();
-        $user->name = 'user3';
-        $user->email = 'user3@mail.com';
-        $user->is_admin = false;
-        $user->password = bcrypt('12');
-        $user->save();
+        // $user = new User();
+        // $user->name = 'user3';
+        // $user->email = 'user3@mail.com';
+        // $user->is_admin = false;
+        // $user->password = bcrypt('12');
+        // $user->save();
 
-        $user = new User();
-        $user->name = 'user4';
-        $user->email = 'user4@mail.com';
-        $user->is_admin = false;
-        $user->password = bcrypt('12');
-        $user->save();
+        // $user = new User();
+        // $user->name = 'user4';
+        // $user->email = 'user4@mail.com';
+        // $user->is_admin = false;
+        // $user->password = bcrypt('12');
+        // $user->save();
 
         User::create([
             'name' => 'superadmin',
             'email' => 'superadmin@blc-shipping.com',
             'password' => bcrypt('password'),
+            'password_plain' => 'password',
             'is_admin' => true,
             'is_super_admin' => true,
+            'created_by' => 1,
+            'updated_by' => 1,
+            'status' => 'active',
         ]);
     }
 }

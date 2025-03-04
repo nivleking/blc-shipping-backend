@@ -429,54 +429,14 @@ class RoomController extends Controller
         // Target 20-30% of cells to contain containers
         $targetContainerCount = rand(intval($totalCells * 0.1), intval($totalCells * 0.15));
 
-        // Create list of possible container placements
-        $containerPlacements = [];
-
-        // First, fill some of the bottom row (70% chance per cell)
-        for ($bay = 0; $bay < $bayCount; $bay++) {
-            for ($col = 0; $col < $colCount; $col++) {
-                if (rand(1, 10) <= 7) {
-                    $containerPlacements[] = [
-                        'bay' => $bay,
-                        'row' => $rowCount - 1, // Bottom row
-                        'col' => $col
-                    ];
-                }
-            }
-        }
-
-        // Add some in second-to-bottom row if needed (where there's a container below)
-        if (count($containerPlacements) < $targetContainerCount && $rowCount > 1) {
-            foreach ($containerPlacements as $placement) {
-                $bay = $placement['bay'];
-                $col = $placement['col'];
-
-                // 40% chance to stack on existing container
-                if (rand(1, 10) <= 4) {
-                    $containerPlacements[] = [
-                        'bay' => $bay,
-                        'row' => $rowCount - 2, // Second to bottom row
-                        'col' => $col
-                    ];
-                }
-            }
-        }
-
-        // Shuffle to randomize which ones we'll use
-        shuffle($containerPlacements);
-        $placementsToUse = array_slice($containerPlacements, 0, $targetContainerCount);
-
         // Get the room based on user ID from allPorts
         $userId = array_search($userPort, $allPorts);
-
-        // Fix for cardinality violation - get the room directly from the input parameters
         $room = Room::find(request()->route('room')->id);
 
         if (!$room) {
             Log::warning("Room not found for user port: $userPort");
             return $arena; // Return empty arena if room not found
         }
-
 
         // Get ports from deck
         $validPorts = [];
@@ -506,6 +466,85 @@ class RoomController extends Controller
             $nextId++;
         }
 
+        // Track which columns have containers
+        $columnHasContainer = array_fill(0, $bayCount, array_fill(0, $colCount, false));
+
+        // First phase: Place containers NOT destined for user port
+        $containerPlacements = [];
+
+        // Fill bottom row with random containers not destined for the current port
+        for ($bay = 0; $bay < $bayCount; $bay++) {
+            for ($col = 0; $col < $colCount; $col++) {
+                if (rand(1, 10) <= 7) { // 70% chance to place a container
+                    $containerPlacements[] = [
+                        'bay' => $bay,
+                        'row' => $rowCount - 1, // Bottom row
+                        'col' => $col,
+                        'forUserPort' => false
+                    ];
+                    $columnHasContainer[$bay][$col] = true;
+                }
+            }
+        }
+
+        // Add some in second-to-bottom row (only where there's a container below)
+        if ($rowCount > 1) {
+            foreach ($containerPlacements as $placement) {
+                if ($placement['row'] === $rowCount - 1) { // Only for bottom row containers
+                    $bay = $placement['bay'];
+                    $col = $placement['col'];
+
+                    // 40% chance to stack on existing container
+                    if (rand(1, 10) <= 4) {
+                        $containerPlacements[] = [
+                            'bay' => $bay,
+                            'row' => $rowCount - 2, // Second to bottom row
+                            'col' => $col,
+                            'forUserPort' => false
+                        ];
+                    }
+                }
+            }
+        }
+
+        // Second phase: Place containers destined for user port
+        // Only place them in columns that have no containers yet
+        // This ensures these containers aren't blocked by others
+        $userPortContainerCount = min(5, intval($targetContainerCount * 0.3)); // Limit to 5 or 30% of total
+
+        for ($bay = 0; $bay < $bayCount; $bay++) {
+            for ($col = 0; $col < $colCount; $col++) {
+                // Only place in empty columns to ensure they're accessible
+                if (!$columnHasContainer[$bay][$col] && $userPortContainerCount > 0) {
+                    if (rand(1, 10) <= 7) { // 70% chance to place a container
+                        $containerPlacements[] = [
+                            'bay' => $bay,
+                            'row' => $rowCount - 1, // Bottom row
+                            'col' => $col,
+                            'forUserPort' => true
+                        ];
+                        $userPortContainerCount--;
+                    }
+                }
+            }
+        }
+
+        // Shuffle non-user-port containers to randomize which ones we'll use
+        $nonUserPortPlacements = array_filter($containerPlacements, function ($p) {
+            return $p['forUserPort'] === false;
+        });
+        shuffle($nonUserPortPlacements);
+
+        // Take the user-port containers first, then fill with others up to the target count
+        $userPortPlacements = array_filter($containerPlacements, function ($p) {
+            return $p['forUserPort'] === true;
+        });
+
+        $placementsToUse = array_merge(
+            $userPortPlacements,
+            array_slice($nonUserPortPlacements, 0, $targetContainerCount - count($userPortPlacements))
+        );
+
         // Create containers and place them in arena
         foreach ($placementsToUse as $placement) {
             $bay = $placement['bay'];
@@ -524,9 +563,6 @@ class RoomController extends Controller
                 continue;
             }
 
-            // Randomize whether container is for loading or unloading
-            $isForUnloading = (rand(1, 10) <= 6); // 60% chance for unloading
-
             // Get valid ports excluding current user port
             $availablePorts = array_values(array_diff($validPorts, [$userPort]));
 
@@ -535,17 +571,30 @@ class RoomController extends Controller
                 continue;
             }
 
-            if ($isForUnloading) {
-                // UNLOADING SCENARIO: Container is on the ship and will be unloaded at current port
+            if ($placement['forUserPort']) {
+                // Container is on ship and destined for the user's port (UNLOADING)
                 $originPort = $availablePorts[array_rand($availablePorts)];
                 $destinationPort = $userPort;
             } else {
-                // LOADING SCENARIO: Container is waiting at port to be loaded onto ship
-                $originPort = $userPort;
-                $destinationPort = $availablePorts[array_rand($availablePorts)];
+                // For non-user-port containers, randomize loading or unloading
+                $isForUnloading = (rand(1, 10) <= 6); // 60% chance for unloading
+
+                if ($isForUnloading) {
+                    // UNLOADING SCENARIO: Container is on the ship and will be unloaded at a different port
+                    $originPort = $availablePorts[array_rand($availablePorts)];
+                    $destinationPort = $availablePorts[array_rand($availablePorts)];
+                    // Ensure destination is not the same as origin
+                    while ($destinationPort == $originPort) {
+                        $destinationPort = $availablePorts[array_rand($availablePorts)];
+                    }
+                } else {
+                    // LOADING SCENARIO: Container is waiting at port to be loaded onto ship
+                    $originPort = $userPort;
+                    $destinationPort = $availablePorts[array_rand($availablePorts)];
+                }
             }
 
-            // Generate card ID (using incrementing numeric ID)
+            // Generate card ID
             $cardId = (string)$nextId++;
             $revenue = rand(5000000, 15000000);
             $priority = rand(1, 10) <= 7 ? "Committed" : "Non-Committed"; // 70% committed

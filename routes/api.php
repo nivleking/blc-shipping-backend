@@ -76,6 +76,7 @@ Route::get('decks/{deck}/origins', [DeckController::class, 'getOrigins']);
 Route::post('decks/{deck}/add-card', [DeckController::class, 'addCard']);
 Route::delete('decks/{deck}/remove-card/{salesCallCard}', [DeckController::class, 'removeCard']);
 Route::delete('decks/{deck}/cards', [DeckController::class, 'removeAllCards']);
+Route::post('decks/{deck}/import-cards', [CardController::class, 'importFromExcel']);
 
 // Admin - Card Routes
 Route::get('cards', [CardController::class, 'index']);

@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\Card;
 use App\Models\Deck;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class CardController extends Controller
 {
@@ -470,5 +472,139 @@ class CardController extends Controller
         ];
 
         return $colorMap[$destination] ?? 'gray';
+    }
+
+    public function importFromExcel(Request $request, Deck $deck)
+    {
+        $request->validate([
+            'file' => 'required|file|mimes:xlsx,xls',
+        ]);
+
+        $file = $request->file('file');
+
+        $spreadsheet = IOFactory::load($file->getPathname());
+        $worksheet = $spreadsheet->getActiveSheet();
+        $rows = $worksheet->toArray();
+
+        $dataRows = array_slice($rows, 11);
+
+        $validPorts = ["SBY", "MKS", "MDN", "JYP", "BPN", "BKS", "BGR", "BTH"];
+        $createdCards = [];
+        $errors = [];
+
+        DB::beginTransaction();
+
+        try {
+            foreach ($dataRows as $index => $row) {
+                if (empty($row[0])) continue;
+
+                $id = trim($row[0]);
+                $origin = strtoupper(trim($row[1]));
+                $destination = strtoupper(trim($row[2]));
+                $priority = trim($row[3]);
+                $containerType = strtolower(trim($row[4]));
+                $quantity = intval($row[5]);
+                $revenuePerContainerRaw
+                    = intval($row[6]);
+
+                if (is_numeric($revenuePerContainerRaw)) {
+                    $revenuePerContainer = intval($revenuePerContainerRaw);
+                } else if (is_string($revenuePerContainerRaw)) {
+                    $cleanValue = preg_replace('/[^0-9.]/', '', $revenuePerContainerRaw);
+                    $revenuePerContainer = intval($cleanValue);
+                }
+
+                if (!$id || !preg_match('/^\d+$/', $id) || intval($id) < 1 || intval($id) > 99999) {
+                    $errors[] = "Row " . ($index + 12) . ": Invalid ID \"$id\". Must be a number between 1-99999";
+                    continue;
+                }
+
+                if (!in_array($origin, $validPorts)) {
+                    $errors[] = "Row " . ($index + 12) . ": Invalid origin port \"$origin\"";
+                    continue;
+                }
+
+                if (!in_array($destination, $validPorts)) {
+                    $errors[] = "Row " . ($index + 12) . ": Invalid destination port \"$destination\"";
+                    continue;
+                }
+
+                if ($origin === $destination) {
+                    $errors[] = "Row " . ($index + 12) . ": Origin and destination cannot be the same";
+                    continue;
+                }
+
+                if (!in_array($priority, ["Committed", "Non-Committed"])) {
+                    $errors[] = "Row " . ($index + 12) . ": Invalid priority \"$priority\"";
+                    continue;
+                }
+
+                if (!in_array(strtolower($containerType), ["dry", "reefer"])) {
+                    $errors[] = "Row " . ($index + 12) . ": Invalid container type \"$containerType\"";
+                    continue;
+                }
+
+                if ($quantity <= 0) {
+                    $errors[] = "Row " . ($index + 12) . ": Invalid quantity";
+                    continue;
+                }
+
+                if ($revenuePerContainer <= 0) {
+                    $errors[] = "Row " . ($index + 12) . ": Invalid revenue per container";
+                    continue;
+                }
+
+                // Ensure correct type based on ID
+                $numericId = intval($id);
+                $type = ($numericId % 5 === 0) ? 'reefer' : 'dry';
+
+                $revenue = $quantity * $revenuePerContainer;
+
+                if (Card::where('id', $id)->exists()) {
+                    $errors[] = "Row " . ($index + 12) . ": Card with ID $id already exists";
+                    continue;
+                }
+
+                $card = Card::create([
+                    'id' => $id,
+                    'type' => $type,
+                    'priority' => $priority,
+                    'origin' => $origin,
+                    'destination' => $destination,
+                    'quantity' => $quantity,
+                    'revenue' => $revenue
+                ]);
+
+                for ($i = 0; $i < $quantity; $i++) {
+                    $color = $this->generateContainerColor($destination);
+                    $card->containers()->create([
+                        'color' => $color,
+                        'type' => $type,
+                    ]);
+                }
+
+                $deck->cards()->attach($card->id);
+
+                $createdCards[] = $card;
+            }
+
+            if (count($errors) > 0) {
+                DB::rollBack();
+                return response()->json(['errors' => $errors], 422);
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Successfully imported ' . count($createdCards) . ' cards to deck',
+                'cards' => $createdCards
+            ], 201);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'message' => 'An error occurred during import',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 }

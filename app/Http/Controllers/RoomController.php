@@ -409,15 +409,6 @@ class RoomController extends Controller
         );
     }
 
-    /**
-     * Generate initial containers for a ship bay
-     *
-     * @param array $arena Empty arena to populate
-     * @param string $userPort Current user's port
-     * @param array $allPorts All ports in the game
-     * @param array $bayTypes Types of bays
-     * @return array Populated arena
-     */
     private function generateInitialContainers($arena, $userPort, $allPorts, $bayTypes)
     {
         // Calculate overall dimensions
@@ -425,181 +416,178 @@ class RoomController extends Controller
         $rowCount = count($arena[0]);
         $colCount = count($arena[0][0]);
         $totalCells = $bayCount * $rowCount * $colCount;
+        $bottomRowIndex = $rowCount - 1;
+        $targetContainerCount = intval($totalCells * 0.5);
+        $containersPlaced = 0;
 
-        // Target 20-30% of cells to contain containers
-        $targetContainerCount = rand(intval($totalCells * 0.1), intval($totalCells * 0.15));
+        // Cache untuk menyimpan tujuan container di tiap posisi dengan key "bay-row-col"
+        $containerDestinations = [];
 
-        // Get the room based on user ID from allPorts
-        $userId = array_search($userPort, $allPorts);
         $room = Room::find(request()->route('room')->id);
-
         if (!$room) {
             Log::warning("Room not found for user port: $userPort");
-            return $arena; // Return empty arena if room not found
+            return $arena;
         }
 
-        // Get ports from deck
+        // Get valid ports from deck
         $validPorts = [];
         $deck = Deck::find($room->deck_id);
         if ($deck) {
-            // Get unique origin and destination ports from deck cards
             $originPorts = $deck->cards()->distinct('origin')->pluck('origin')->toArray();
             $destPorts = $deck->cards()->distinct('destination')->pluck('destination')->toArray();
             $validPorts = array_values(array_unique(array_merge($originPorts, $destPorts)));
+            $validPorts = array_filter($validPorts, function ($port) {
+                return !empty($port);
+            });
+        }
+        if (count($validPorts) < 3) {
+            $validPorts = array_merge($validPorts, array_values($allPorts));
+            $validPorts = array_unique($validPorts);
+            if (count($validPorts) < 3) {
+                $defaultPorts = ['SBY', 'MKS', 'MDN', 'JYP', 'BPN', 'BKS'];
+                foreach ($defaultPorts as $port) {
+                    if (!in_array($port, $validPorts)) {
+                        $validPorts[] = $port;
+                    }
+                }
+            }
         }
 
-        // Filter out empty port values
-        $validPorts = array_filter($validPorts, function ($port) {
-            return !empty($port);
-        });
-
-        // If no valid ports found, use ports from allPorts
-        if (empty($validPorts)) {
-            $validPorts = array_values($allPorts);
-        }
-
-        Log::info("Valid ports for room {$room->id}: ", $validPorts);
-
-        // Get a starting ID for cards
         $nextId = 1;
         while (Card::where('id', (string)$nextId)->exists()) {
             $nextId++;
         }
 
-        // Track which columns have containers
-        $columnHasContainer = array_fill(0, $bayCount, array_fill(0, $colCount, false));
-
-        // First phase: Place containers NOT destined for user port
-        $containerPlacements = [];
-
-        // Fill bottom row with random containers not destined for the current port
+        // PHASE 1: Isi baris bawah saja
+        $bottomRowCandidates = [];
         for ($bay = 0; $bay < $bayCount; $bay++) {
             for ($col = 0; $col < $colCount; $col++) {
-                if (rand(1, 10) <= 7) { // 70% chance to place a container
-                    $containerPlacements[] = [
-                        'bay' => $bay,
-                        'row' => $rowCount - 1, // Bottom row
-                        'col' => $col,
-                        'forUserPort' => false
-                    ];
-                    $columnHasContainer[$bay][$col] = true;
+                $bottomRowCandidates[] = ['bay' => $bay, 'col' => $col];
+            }
+        }
+        shuffle($bottomRowCandidates);
+        foreach ($bottomRowCandidates as $candidate) {
+            $bay = $candidate['bay'];
+            $col = $candidate['col'];
+            if (rand(1, 10) <= 7) { // 70% chance
+                $row = $bottomRowIndex;
+                $container = $this->createContainer($bay, $row, $col, $bayTypes, $userPort, $validPorts, $nextId++, $bottomRowIndex);
+                if ($container) {
+                    $arena[$bay][$row][$col] = $container['container_id'];
+                    $containerDestinations["$bay-$row-$col"] = $container['destination'];
+                    $containersPlaced++;
+                }
+                if ($containersPlaced >= $targetContainerCount) {
+                    break;
                 }
             }
         }
 
-        // Add some in second-to-bottom row (only where there's a container below)
-        if ($rowCount > 1) {
-            foreach ($containerPlacements as $placement) {
-                if ($placement['row'] === $rowCount - 1) { // Only for bottom row containers
-                    $bay = $placement['bay'];
-                    $col = $placement['col'];
+        // PHASE 2: Bangun stack dari bawah ke atas,
+        // pastikan tidak menumpuk container jika di bawahnya adalah container tujuan user.
+        $stackPositions = [];
+        for ($bay = 0; $bay < $bayCount; $bay++) {
+            for ($col = 0; $col < $colCount; $col++) {
+                if ($arena[$bay][$bottomRowIndex][$col] !== null) {
+                    $stackPositions[] = ['bay' => $bay, 'col' => $col];
+                }
+            }
+        }
+        shuffle($stackPositions);
+        for ($row = $rowCount - 2; $row >= 0; $row--) {
+            foreach ($stackPositions as $position) {
+                $bay = $position['bay'];
+                $col = $position['col'];
+                if ($arena[$bay][$row + 1][$col] !== null) {
+                    $keyBelow = "$bay-" . ($row + 1) . "-$col";
+                    // Jika container di bawah adalah tujuan user, jangan tumpuk apa pun.
+                    if (isset($containerDestinations[$keyBelow]) && $containerDestinations[$keyBelow] === $userPort) {
+                        continue;
+                    }
+                    $stackingChance = ($row === $bottomRowIndex - 1) ? 5 : (4 - ($bottomRowIndex - $row));
+                    if (rand(1, 10) <= $stackingChance && $containersPlaced < $targetContainerCount) {
+                        $container = $this->createContainer($bay, $row, $col, $bayTypes, $userPort, $validPorts, $nextId++, $bottomRowIndex);
+                        if ($container) {
+                            $arena[$bay][$row][$col] = $container['container_id'];
+                            $containerDestinations["$bay-$row-$col"] = $container['destination'];
+                            $containersPlaced++;
+                        }
+                    }
+                }
+                if ($containersPlaced >= $targetContainerCount) {
+                    break 2;
+                }
+            }
+        }
 
-                    // 40% chance to stack on existing container
-                    if (rand(1, 10) <= 4) {
-                        $containerPlacements[] = [
-                            'bay' => $bay,
-                            'row' => $rowCount - 2, // Second to bottom row
-                            'col' => $col,
-                            'forUserPort' => false
-                        ];
+        // PHASE 3: Isi celah jika target belum tercapai
+        if ($containersPlaced < $targetContainerCount) {
+            for ($row = $rowCount - 2; $row >= 0; $row--) {
+                for ($bay = 0; $bay < $bayCount; $bay++) {
+                    for ($col = 0; $col < $colCount; $col++) {
+                        if ($arena[$bay][$row + 1][$col] !== null && $arena[$bay][$row][$col] === null) {
+                            $keyBelow = "$bay-" . ($row + 1) . "-$col";
+                            if (isset($containerDestinations[$keyBelow]) && $containerDestinations[$keyBelow] === $userPort) {
+                                continue; // Jangan tumpuk di atas container tujuan user.
+                            }
+                            if (rand(1, 10) <= 3 && $containersPlaced < $targetContainerCount) {
+                                $container = $this->createContainer($bay, $row, $col, $bayTypes, $userPort, $validPorts, $nextId++, $bottomRowIndex);
+                                if ($container) {
+                                    $arena[$bay][$row][$col] = $container['container_id'];
+                                    $containerDestinations["$bay-$row-$col"] = $container['destination'];
+                                    $containersPlaced++;
+                                }
+                            }
+                        }
+                        if ($containersPlaced >= $targetContainerCount) {
+                            break 3;
+                        }
                     }
                 }
             }
         }
 
-        // Second phase: Place containers destined for user port
-        // Only place them in columns that have no containers yet
-        // This ensures these containers aren't blocked by others
-        $userPortContainerCount = min(5, intval($targetContainerCount * 0.3)); // Limit to 5 or 30% of total
+        return $arena;
+    }
 
-        for ($bay = 0; $bay < $bayCount; $bay++) {
-            for ($col = 0; $col < $colCount; $col++) {
-                // Only place in empty columns to ensure they're accessible
-                if (!$columnHasContainer[$bay][$col] && $userPortContainerCount > 0) {
-                    if (rand(1, 10) <= 7) { // 70% chance to place a container
-                        $containerPlacements[] = [
-                            'bay' => $bay,
-                            'row' => $rowCount - 1, // Bottom row
-                            'col' => $col,
-                            'forUserPort' => true
-                        ];
-                        $userPortContainerCount--;
-                    }
-                }
-            }
+    private function createContainer($bay, $row, $col, $bayTypes, $userPort, $validPorts, $nextId, $bottomRowIndex)
+    {
+        $bayType = $bayTypes[$bay] ?? 'dry';
+        $containerType = $bayType === 'reefer' ? 'reefer' : (rand(1, 10) <= 8 ? 'dry' : 'reefer');
+
+        if ($containerType === 'reefer' && $bayType !== 'reefer') {
+            return null;
         }
 
-        // Shuffle non-user-port containers to randomize which ones we'll use
-        $nonUserPortPlacements = array_filter($containerPlacements, function ($p) {
-            return $p['forUserPort'] === false;
-        });
-        shuffle($nonUserPortPlacements);
+        $availablePorts = array_values(array_diff($validPorts, [$userPort]));
+        if (empty($availablePorts)) {
+            return null;
+        }
 
-        // Take the user-port containers first, then fill with others up to the target count
-        $userPortPlacements = array_filter($containerPlacements, function ($p) {
-            return $p['forUserPort'] === true;
-        });
-
-        $placementsToUse = array_merge(
-            $userPortPlacements,
-            array_slice($nonUserPortPlacements, 0, $targetContainerCount - count($userPortPlacements))
-        );
-
-        // Create containers and place them in arena
-        foreach ($placementsToUse as $placement) {
-            $bay = $placement['bay'];
-            $row = $placement['row'];
-            $col = $placement['col'];
-
-            // Skip if cell is already occupied
-            if ($arena[$bay][$row][$col] !== null) continue;
-
-            // Determine container type based on bay type
-            $bayType = $bayTypes[$bay] ?? 'dry';
-            $containerType = $bayType === 'reefer' ? 'reefer' : (rand(1, 10) <= 8 ? 'dry' : 'reefer');
-
-            // For reefer containers, only allow in reefer bays
-            if ($containerType === 'reefer' && $bayType !== 'reefer') {
-                continue;
-            }
-
-            // Get valid ports excluding current user port
-            $availablePorts = array_values(array_diff($validPorts, [$userPort]));
-
-            // If no other ports available, skip creating this container
-            if (empty($availablePorts)) {
-                continue;
-            }
-
-            if ($placement['forUserPort']) {
-                // Container is on ship and destined for the user's port (UNLOADING)
+        // Untuk container di baris bawah, 30% chance untuk jadi tujuan user
+        $isForUserPort = ($row === $bottomRowIndex) && (rand(1, 10) <= 3);
+        if ($isForUserPort) {
+            $originPort = $availablePorts[array_rand($availablePorts)];
+            $destinationPort = $userPort;
+        } else {
+            $isForUnloading = (rand(1, 10) <= 6);
+            if ($isForUnloading) {
                 $originPort = $availablePorts[array_rand($availablePorts)];
-                $destinationPort = $userPort;
-            } else {
-                // For non-user-port containers, randomize loading or unloading
-                $isForUnloading = (rand(1, 10) <= 6); // 60% chance for unloading
-
-                if ($isForUnloading) {
-                    // UNLOADING SCENARIO: Container is on the ship and will be unloaded at a different port
-                    $originPort = $availablePorts[array_rand($availablePorts)];
-                    $destinationPort = $availablePorts[array_rand($availablePorts)];
-                    // Ensure destination is not the same as origin
-                    while ($destinationPort == $originPort) {
-                        $destinationPort = $availablePorts[array_rand($availablePorts)];
-                    }
-                } else {
-                    // LOADING SCENARIO: Container is waiting at port to be loaded onto ship
-                    $originPort = $userPort;
+                $destinationPort = $availablePorts[array_rand($availablePorts)];
+                while ($destinationPort == $originPort && count($availablePorts) > 1) {
                     $destinationPort = $availablePorts[array_rand($availablePorts)];
                 }
+            } else {
+                $originPort = $userPort;
+                $destinationPort = $availablePorts[array_rand($availablePorts)];
             }
+        }
 
-            // Generate card ID
-            $cardId = (string)$nextId++;
-            $revenue = rand(5000000, 15000000);
-            $priority = rand(1, 10) <= 7 ? "Committed" : "Non-Committed"; // 70% committed
+        $cardId = (string)$nextId;
+        $revenue = rand(5000000, 15000000);
+        $priority = rand(1, 10) <= 7 ? "Committed" : "Non-Committed";
 
-            // Create container and card in database
+        try {
             $card = Card::create([
                 'id' => $cardId,
                 'type' => $containerType,
@@ -616,19 +604,17 @@ class RoomController extends Controller
                 'type' => $containerType
             ]);
 
-            // Place container in arena
-            $arena[$bay][$row][$col] = $container->id;
+            return [
+                'container_id' => $container->id,
+                'card_id' => $card->id,
+                'destination' => $destinationPort, // informasi tujuan ditambahkan
+            ];
+        } catch (\Exception $e) {
+            Log::error("Failed to create container: " . $e->getMessage());
+            return null;
         }
-
-        return $arena;
     }
 
-    /**
-     * Generate color for container based on destination port
-     *
-     * @param string $destination Destination port code
-     * @return string Color name
-     */
     private function generateContainerColor($destination)
     {
         $colorMap = [

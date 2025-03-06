@@ -20,9 +20,9 @@ class ShipLayoutController extends Controller
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
             'bay_size' => 'required|array',
-            'bay_size.rows' => 'required|integer|min:1|max:7',
-            'bay_size.columns' => 'required|integer|min:1|max:8',
-            'bay_count' => 'required|integer|min:1|max:8',
+            'bay_size.rows' => 'required|integer|min:2|max:10',
+            'bay_size.columns' => 'required|integer|min:2|max:10',
+            'bay_count' => 'required|integer|min:1|max:10',
             'bay_types' => 'required|array|min:1',
             'bay_types.*' => 'required|in:dry,reefer'
         ]);

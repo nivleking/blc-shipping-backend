@@ -42,7 +42,7 @@ class DeckController extends Controller
 
     public function destroy(Deck $deck)
     {
-        // $deck->cards()->delete();
+        $this->removeAllCards($deck);
         $deck->delete();
         return response()->json(null, 204);
     }

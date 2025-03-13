@@ -10,6 +10,7 @@ use App\Http\Controllers\ShipDockController;
 use App\Http\Controllers\ShipLayoutController;
 use App\Http\Controllers\SimulationLogController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\WeeklyPerformanceController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Route;
@@ -171,3 +172,8 @@ Route::get('simulation-logs/{roomId}/{userId}', [SimulationLogController::class,
 Route::get('/capacity-uptake/weeks/{roomId}/{userId}', [CapacityUptakeController::class, 'getWeeksByRoomUser']);
 Route::get('/capacity-uptake/{roomId}/{userId}/{week}', [CapacityUptakeController::class, 'getByRoomUserWeek']);
 Route::post('/capacity-uptake', [CapacityUptakeController::class, 'saveOrUpdate']);
+
+// Weekly Performance Routes
+Route::get('/rooms/{roomId}/weekly-performance/{userId}', [WeeklyPerformanceController::class, 'getWeeklyPerformance']);
+Route::post('/rooms/{roomId}/weekly-performance/{userId}', [WeeklyPerformanceController::class, 'storeWeeklyPerformance']);
+Route::put('/rooms/{roomId}/weekly-performance/{userId}/{weekNumber}', [WeeklyPerformanceController::class, 'updateWeek']);

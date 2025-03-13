@@ -686,11 +686,17 @@ class RoomController extends Controller
         $validated = $request->validate([
             'room_id' => 'required|exists:rooms,id',
             'card_temporary_id' => 'required|exists:cards,id',
+            'round' => 'sometimes|integer|min:1',
         ]);
         $cardTemporary = CardTemporary::where('card_id', $validated['card_temporary_id'])
             ->where('room_id', $validated['room_id'])
             ->first();
         $cardTemporary->status = 'accepted';
+
+        if (isset($validatedData['round'])) {
+            $cardTemporary->round = $validatedData['round'];
+        }
+
         $cardTemporary->save();
 
         return response()->json(['message' => 'Sales call card accepted.']);
@@ -701,11 +707,17 @@ class RoomController extends Controller
         $validated = $request->validate([
             'room_id' => 'required|exists:rooms,id',
             'card_temporary_id' => 'required|exists:cards,id',
+            'round' => 'sometimes|integer|min:1',
         ]);
         $cardTemporary = CardTemporary::where('card_id', $validated['card_temporary_id'])
             ->where('room_id', $validated['room_id'])
             ->first();
         $cardTemporary->status = 'rejected';
+
+        if (isset($validatedData['round'])) {
+            $cardTemporary->round = $validatedData['round'];
+        }
+
         $cardTemporary->save();
 
         return response()->json(['message' => 'Sales call card rejected.']);

@@ -101,14 +101,7 @@ class CardController extends Controller
 
     public function generate(Request $request, Deck $deck)
     {
-        // Clear existing cards
-        if ($deck->cards()->count() > 0) {
-            foreach ($deck->cards as $card) {
-                $deck->cards()->detach($card->id);
-                $card->delete();
-            }
-        }
-
+        $this->destroyAllCardsInDeck($deck);
         $validated = $request->validate([
             'totalRevenueEachPort' => 'required|numeric',
             'totalContainerQuantityEachPort' => 'required|numeric',
@@ -476,6 +469,7 @@ class CardController extends Controller
 
     public function importFromExcel(Request $request, Deck $deck)
     {
+        $this->destroyAllCardsInDeck($deck);
         $request->validate([
             'file' => 'required|file|mimes:xlsx,xls',
         ]);
@@ -605,6 +599,17 @@ class CardController extends Controller
                 'message' => 'An error occurred during import',
                 'error' => $e->getMessage()
             ], 500);
+        }
+    }
+
+    private function destroyAllCardsInDeck(Deck $deck)
+    {
+        // Clear existing cards
+        if ($deck->cards()->count() > 0) {
+            foreach ($deck->cards as $card) {
+                $deck->cards()->detach($card->id);
+                $card->delete();
+            }
         }
     }
 }

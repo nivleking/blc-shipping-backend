@@ -15,4 +15,14 @@ class Deck extends Model
     {
         return $this->belongsToMany(Card::class, 'card_deck', 'deck_id', 'card_id');
     }
+
+    public function marketIntelligences()
+    {
+        return $this->hasMany(MarketIntelligence::class);
+    }
+
+    public function activeMarketIntelligence()
+    {
+        return $this->marketIntelligences()->latest()->first();
+    }
 }

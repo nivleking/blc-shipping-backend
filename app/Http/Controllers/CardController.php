@@ -109,10 +109,39 @@ class CardController extends Controller
             'ports' => 'required|numeric',
             'quantityStandardDeviation' => 'required|numeric',
             'revenueStandardDeviation' => 'required|numeric',
+            'useMarketIntelligence' => 'boolean',
         ]);
 
+        $useMarketIntelligence = isset($validated['useMarketIntelligence']) ? $validated['useMarketIntelligence'] : true;
+
+        $basePriceMap = [];
         $ports = $this->getPorts($validated['ports']);
-        $basePriceMap = $this->getBasePriceMap();
+
+        if ($useMarketIntelligence) {
+            $marketIntelligence = $deck->activeMarketIntelligence();
+
+            if ($marketIntelligence && !empty($marketIntelligence->price_data)) {
+                $basePriceMap = $marketIntelligence->price_data;
+
+                $portSet = [];
+                foreach (array_keys($marketIntelligence->price_data) as $key) {
+                    $parts = explode('-', $key);
+                    if (!in_array($parts[0], $portSet)) {
+                        $portSet[] = $parts[0];
+                    }
+                }
+
+                if (count($portSet) >= 2) {
+                    $ports = $portSet;
+                    $validated['ports'] = count($ports);
+                }
+            } else {
+                $basePriceMap = $this->getBasePriceMap();
+            }
+        } else {
+            $basePriceMap = $this->getBasePriceMap();
+        }
+
         $targetRevenue = $validated['totalRevenueEachPort'];
         $targetContainers = $validated['totalContainerQuantityEachPort'];
         $salesCallsCount = $validated['salesCallCountEachPort'];
@@ -125,7 +154,7 @@ class CardController extends Controller
         }
 
         foreach ($ports as $originPort) {
-            // Pre-distribute containers (ensuring total 15)
+            // Pre-distribute containers (ensuring total matches target)
             $quantities = array_fill(0, $salesCallsCount, 1);
             $remainingContainers = $targetContainers - $salesCallsCount;
 
@@ -140,14 +169,15 @@ class CardController extends Controller
             $portCalls = [];
 
             for ($i = 0; $i < $salesCallsCount; $i++) {
-                $containerType = ($id % 5 == 0) ? "reefer" : "dry";
+                $containerType = ($id % 5 == 0) ? "Reefer" : "Dry";
 
                 do {
                     $destinationPort = $ports[array_rand($ports)];
                 } while ($destinationPort === $originPort);
 
                 $key = "$originPort-$destinationPort-$containerType";
-                $basePrice = $basePriceMap[$key] ?? 10000000;
+
+                $basePrice = isset($basePriceMap[$key]) ? $basePriceMap[$key] : 10000000;
 
                 // Round revenue per container to nearest 50,000
                 $revenuePerContainer = round(
@@ -159,56 +189,53 @@ class CardController extends Controller
                 $portRevenue += $revenue;
 
                 $portCalls[] = [
-                    'id' => (string)$id, // Convert to string as per validation
-                    'type' => $containerType,
-                    'priority' => rand(0, 1) ? "Committed" : "Non-Committed",
+                    'id' => $id++,
+                    'type' => strtolower($containerType),
+                    'priority' => (rand(1, 100) <= 70) ? "Committed" : "Non-Committed",
                     'origin' => $originPort,
                     'destination' => $destinationPort,
                     'quantity' => $quantities[$i],
                     'revenue' => $revenue,
-                    'revenuePerContainer' => $revenuePerContainer
                 ];
-
-                $id++;
             }
 
-            // Scale revenues to match target while maintaining 50,000 increments
-            $revenueFactor = $targetRevenue / $portRevenue;
-            foreach ($portCalls as &$call) {
-                $newRevenuePerContainer = round(($call['revenuePerContainer'] * $revenueFactor) / 50000) * 50000;
-                $call['revenue'] = $newRevenuePerContainer * $call['quantity'];
-                unset($call['revenuePerContainer']);
+            if ($portRevenue > 0) {
+                $revenueFactor = $targetRevenue / $portRevenue;
+                foreach ($portCalls as &$call) {
+                    $call['revenue'] = round(($call['revenue'] * $revenueFactor) / 50000) * 50000;
+                }
             }
 
             // Fix any remaining difference in largest call
             $actualRevenue = array_sum(array_column($portCalls, 'revenue'));
             $remainingRevenue = $targetRevenue - $actualRevenue;
-            if ($remainingRevenue != 0) {
-                $maxRevenueIndex = array_search(max(array_column($portCalls, 'revenue')), array_column($portCalls, 'revenue'));
-                $portCalls[$maxRevenueIndex]['revenue'] += $remainingRevenue;
+            if ($remainingRevenue != 0 && count($portCalls) > 0) {
+                // Find the largest revenue call
+                $maxRevenueKey = 0;
+                for ($i = 1; $i < count($portCalls); $i++) {
+                    if ($portCalls[$i]['revenue'] > $portCalls[$maxRevenueKey]['revenue']) {
+                        $maxRevenueKey = $i;
+                    }
+                }
+                $portCalls[$maxRevenueKey]['revenue'] += $remainingRevenue;
             }
 
             $salesCalls = array_merge($salesCalls, $portCalls);
         }
 
-        // Save to database
         foreach ($salesCalls as $salesCallData) {
-            // Buat request baru dengan data sales call
             $cardRequest = new Request([
-                'id' => $salesCallData['id'],
+                'id' => (string)$salesCallData['id'],
                 'type' => $salesCallData['type'],
                 'priority' => $salesCallData['priority'],
                 'origin' => $salesCallData['origin'],
                 'destination' => $salesCallData['destination'],
                 'quantity' => $salesCallData['quantity'],
                 'revenue' => $salesCallData['revenue'],
-                'mode' => 'auto_generate', // Set mode ke auto_generate
+                'mode' => 'auto_generate',
             ]);
 
-            // Panggil store method dengan request baru
             $response = $this->store($cardRequest);
-
-            // Parse response JSON untuk mendapatkan card
             $responseData = json_decode($response->getContent());
             $salesCall = Card::find($responseData->id);
 

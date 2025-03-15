@@ -191,7 +191,7 @@ class CardController extends Controller
                 $portCalls[] = [
                     'id' => $id++,
                     'type' => strtolower($containerType),
-                    'priority' => (rand(1, 100) <= 70) ? "Committed" : "Non-Committed",
+                    'priority' => (rand(1, 100) <= 50) ? "Committed" : "Non-Committed",
                     'origin' => $originPort,
                     'destination' => $destinationPort,
                     'quantity' => $quantities[$i],

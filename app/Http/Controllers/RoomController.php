@@ -444,33 +444,33 @@ class RoomController extends Controller
             });
         }
 
-        // Add fallback ports if needed
-        if (count($validPorts) < 3) {
-            $validPorts = array_merge($validPorts, array_values($allPorts));
-            $validPorts = array_unique($validPorts);
-            if (count($validPorts) < 3) {
-                $defaultPorts = ['SBY', 'MKS', 'MDN', 'JYP', 'BPN', 'BKS'];
-                foreach ($defaultPorts as $port) {
-                    if (!in_array($port, $validPorts)) {
-                        $validPorts[] = $port;
-                    }
-                }
-            }
-        }
+        // // Add fallback ports if needed
+        // if (count($validPorts) < 3) {
+        //     $validPorts = array_merge($validPorts, array_values($allPorts));
+        //     $validPorts = array_unique($validPorts);
+        //     if (count($validPorts) < 3) {
+        //         $defaultPorts = ['SBY', 'MKS', 'MDN', 'JYP', 'BPN', 'BKS'];
+        //         foreach ($defaultPorts as $port) {
+        //             if (!in_array($port, $validPorts)) {
+        //                 $validPorts[] = $port;
+        //             }
+        //         }
+        //     }
+        // }
 
         // Create a list of ports excluding user's port
         $otherPorts = array_values(array_diff($validPorts, [$userPort]));
 
-        // If we don't have enough ports, add some default ones
-        while (count($otherPorts) < 3) {
-            $defaultPorts = ['SBY', 'MKS', 'MDN', 'JYP', 'BPN', 'BKS'];
-            foreach ($defaultPorts as $port) {
-                if (!in_array($port, $otherPorts) && $port !== $userPort) {
-                    $otherPorts[] = $port;
-                    break;
-                }
-            }
-        }
+        // // If we don't have enough ports, add some default ones
+        // while (count($otherPorts) < 3) {
+        //     $defaultPorts = ['SBY', 'MKS', 'MDN', 'JYP', 'BPN', 'BKS'];
+        //     foreach ($defaultPorts as $port) {
+        //         if (!in_array($port, $otherPorts) && $port !== $userPort) {
+        //             $otherPorts[] = $port;
+        //             break;
+        //         }
+        //     }
+        // }
 
         // Limit to 4 ports max (including user port)
         if (count($otherPorts) > 3) {

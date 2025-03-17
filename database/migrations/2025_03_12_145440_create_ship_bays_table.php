@@ -24,6 +24,7 @@ return new class extends Migration
             $table->bigInteger('total_revenue')->default(0);
             $table->unsignedBigInteger('discharge_moves')->default(0);
             $table->unsignedBigInteger('load_moves')->default(0);
+            $table->unsignedBigInteger('processed_cards')->default(0);
             $table->unsignedBigInteger('accepted_cards')->default(0);
             $table->unsignedBigInteger('rejected_cards')->default(0);
             $table->integer('current_round')->default(1);

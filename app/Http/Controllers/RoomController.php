@@ -36,6 +36,7 @@ class RoomController extends Controller
             'ship_layout' => 'required|exists:ship_layouts,id',
             'total_rounds' => 'required|integer|min:1',
             'cards_limit_per_round' => 'required|integer|min:1',
+            'cards_must_process_per_round' => 'required|integer|min:1',
             'swap_config' => 'nullable|array'
         ]);
 
@@ -58,6 +59,7 @@ class RoomController extends Controller
                 'bay_types' => json_encode($layout->bay_types),
                 'total_rounds' => $validated['total_rounds'],
                 'cards_limit_per_round' => $validated['cards_limit_per_round'],
+                'cards_must_process_per_round' => $validated['cards_must_process_per_round'],
                 'swap_config' => json_encode($validated['swap_config'] ?? [])
             ]);
 
@@ -229,6 +231,7 @@ class RoomController extends Controller
         // Increment round counter for all ship bays in this room
         ShipBay::where('room_id', $room->id)
             ->update([
+                'processed_cards' => 0,
                 'current_round' => DB::raw('current_round + 1'),
                 'current_round_cards' => 0, // Reset cards count for new round
                 'section' => 'section1' // Reset section
@@ -566,7 +569,9 @@ class RoomController extends Controller
                     'origin' => $originPort,
                     'destination' => $destinationPort,
                     'quantity' => 1,
-                    'revenue' => $revenue
+                    'revenue' => $revenue,
+                    'is_initial' => true,
+                    'generated_for_room_id' => $room->id
                 ]);
 
                 $container = Container::create([

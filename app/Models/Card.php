@@ -21,6 +21,8 @@ class Card extends Model
         'quantity',
         'revenue',
         'is_committed',
+        'is_initial',
+        'generated_for_room_id',
     ];
 
     protected $hidden = [
@@ -32,6 +34,7 @@ class Card extends Model
         'quantity' => 'integer',
         'revenue' => 'integer',
         'is_committed' => 'boolean',
+        'is_initial' => 'boolean',
     ];
 
     public function decks()

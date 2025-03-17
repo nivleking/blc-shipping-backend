@@ -23,6 +23,8 @@ return new class extends Migration
             $table->string('destination');
             $table->integer('quantity');
             $table->integer('revenue');
+            $table->boolean('is_initial')->default(false);
+            $table->string('generated_for_room_id')->nullable();
             $table->timestamps();
         });
     }

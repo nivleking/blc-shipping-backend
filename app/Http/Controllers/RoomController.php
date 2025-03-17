@@ -124,12 +124,51 @@ class RoomController extends Controller
 
     public function destroy(Request $request, Room $room)
     {
+        try {
+            DB::beginTransaction();
 
-        $room->delete();
-        return response()->json(
-            ['message' => 'Room deleted successfully'],
-            200
-        );
+            // 1. Find and delete card temporaries for this room
+            CardTemporary::where('room_id', $room->id)->delete();
+
+            // 2. Find all initial cards generated for this room
+            $initialCards = Card::where('is_initial', true)
+                ->where('generated_for_room_id', $room->id)
+                ->get();
+
+            // 3. Get container IDs associated with these cards
+            $containerIds = [];
+            foreach ($initialCards as $card) {
+                $containers = $card->containers()->pluck('id')->toArray();
+                $containerIds = array_merge($containerIds, $containers);
+            }
+
+            // 4. Delete the containers
+            if (!empty($containerIds)) {
+                Container::whereIn('id', $containerIds)->delete();
+            }
+
+            // 5. Delete the initial cards
+            foreach ($initialCards as $card) {
+                $card->delete();
+            }
+
+            // 6. Delete the room (and its related ship_bays via cascade)
+            $room->delete();
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Room and all associated data deleted successfully'
+            ]);
+        } catch (Exception $e) {
+            DB::rollBack();
+            Log::error('Error deleting room: ' . $e->getMessage());
+
+            return response()->json([
+                'message' => 'Failed to delete room',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     public function joinRoom(Request $request, Room $room)

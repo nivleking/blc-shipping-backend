@@ -72,10 +72,20 @@ class DeckController extends Controller
         ]);
     }
 
-    public function removeCard(Deck $deck, Card $card)
+    public function removeCard(Deck $deck, Card $salesCallCard)
     {
-        $deck->cards()->detach($card->id);
-        return response()->json(['message' => 'Card removed from deck']);
+        try {
+            // Only detach this specific card from the deck, don't delete the card
+            $deck->cards()->detach($salesCallCard->id);
+
+            // Now delete the card and its containers since it's no longer needed
+            $salesCallCard->containers()->delete();
+            $salesCallCard->delete();
+
+            return response()->json(['message' => 'Card removed from deck successfully']);
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Failed to remove card: ' . $e->getMessage()], 500);
+        }
     }
 
     public function removeAllCards(Deck $deck)

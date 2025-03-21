@@ -9,9 +9,10 @@ class ShipDock extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['arena', 'port', 'user_id', 'room_id'];
+    protected $fillable = ['arena', 'port', 'user_id', 'room_id', 'dock_size'];
 
     protected $casts = [
         'arena' => 'array',
+        'dock_size' => 'array',
     ];
 }

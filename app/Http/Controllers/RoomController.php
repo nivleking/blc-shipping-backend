@@ -36,6 +36,7 @@ class RoomController extends Controller
             'ship_layout' => 'required|exists:ship_layouts,id',
             'total_rounds' => 'required|integer|min:1',
             'cards_limit_per_round' => 'required|integer|min:1',
+            'cards_must_process_per_round' => 'required|integer|min:1',
             'swap_config' => 'nullable|array'
         ]);
 
@@ -58,6 +59,7 @@ class RoomController extends Controller
                 'bay_types' => json_encode($layout->bay_types),
                 'total_rounds' => $validated['total_rounds'],
                 'cards_limit_per_round' => $validated['cards_limit_per_round'],
+                'cards_must_process_per_round' => $validated['cards_must_process_per_round'],
                 'swap_config' => json_encode($validated['swap_config'] ?? [])
             ]);
 
@@ -122,12 +124,51 @@ class RoomController extends Controller
 
     public function destroy(Request $request, Room $room)
     {
+        try {
+            DB::beginTransaction();
 
-        $room->delete();
-        return response()->json(
-            ['message' => 'Room deleted successfully'],
-            200
-        );
+            // 1. Find and delete card temporaries for this room
+            CardTemporary::where('room_id', $room->id)->delete();
+
+            // 2. Find all initial cards generated for this room
+            $initialCards = Card::where('is_initial', true)
+                ->where('generated_for_room_id', $room->id)
+                ->get();
+
+            // 3. Get container IDs associated with these cards
+            $containerIds = [];
+            foreach ($initialCards as $card) {
+                $containers = $card->containers()->pluck('id')->toArray();
+                $containerIds = array_merge($containerIds, $containers);
+            }
+
+            // 4. Delete the containers
+            if (!empty($containerIds)) {
+                Container::whereIn('id', $containerIds)->delete();
+            }
+
+            // 5. Delete the initial cards
+            foreach ($initialCards as $card) {
+                $card->delete();
+            }
+
+            // 6. Delete the room (and its related ship_bays via cascade)
+            $room->delete();
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Room and all associated data deleted successfully'
+            ]);
+        } catch (Exception $e) {
+            DB::rollBack();
+            Log::error('Error deleting room: ' . $e->getMessage());
+
+            return response()->json([
+                'message' => 'Failed to delete room',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     public function joinRoom(Request $request, Room $room)
@@ -229,6 +270,7 @@ class RoomController extends Controller
         // Increment round counter for all ship bays in this room
         ShipBay::where('room_id', $room->id)
             ->update([
+                'processed_cards' => 0,
                 'current_round' => DB::raw('current_round + 1'),
                 'current_round_cards' => 0, // Reset cards count for new round
                 'section' => 'section1' // Reset section
@@ -341,12 +383,18 @@ class RoomController extends Controller
 
     public function setPorts(Request $request, Room $room)
     {
-        $request->validate([
-            'ports' => 'required|array',
+        $validated = $request->validate([
+            'ports' => 'present|array|min:1',
             'ports.*' => 'required|string',
         ]);
 
-        $ports = $request->input('ports');
+        $ports = $validated['ports'];
+        if (empty($ports)) {
+            return response()->json([
+                'message' => 'Please assign ports for all users.'
+            ], 422);
+        }
+
         $shipBays = [];
 
         // Get room configuration for bay setup
@@ -415,14 +463,11 @@ class RoomController extends Controller
         $bayCount = count($arena);
         $rowCount = count($arena[0]);
         $colCount = count($arena[0][0]);
-        $totalCells = $bayCount * $rowCount * $colCount;
         $bottomRowIndex = $rowCount - 1;
-        $targetContainerCount = intval($totalCells * 0.5);
-        $containersPlaced = 0;
 
-        // Cache untuk menyimpan tujuan container di tiap posisi dengan key "bay-row-col"
-        $containerDestinations = [];
+        $containersPerPort = 5;
 
+        // Get room and deck information
         $room = Room::find(request()->route('room')->id);
         if (!$room) {
             Log::warning("Room not found for user port: $userPort");
@@ -440,111 +485,151 @@ class RoomController extends Controller
                 return !empty($port);
             });
         }
-        if (count($validPorts) < 3) {
-            $validPorts = array_merge($validPorts, array_values($allPorts));
-            $validPorts = array_unique($validPorts);
-            if (count($validPorts) < 3) {
-                $defaultPorts = ['SBY', 'MKS', 'MDN', 'JYP', 'BPN', 'BKS'];
-                foreach ($defaultPorts as $port) {
-                    if (!in_array($port, $validPorts)) {
-                        $validPorts[] = $port;
-                    }
-                }
-            }
+
+        // // Add fallback ports if needed
+        // if (count($validPorts) < 3) {
+        //     $validPorts = array_merge($validPorts, array_values($allPorts));
+        //     $validPorts = array_unique($validPorts);
+        //     if (count($validPorts) < 3) {
+        //         $defaultPorts = ['SBY', 'MKS', 'MDN', 'JYP', 'BPN', 'BKS'];
+        //         foreach ($defaultPorts as $port) {
+        //             if (!in_array($port, $validPorts)) {
+        //                 $validPorts[] = $port;
+        //             }
+        //         }
+        //     }
+        // }
+
+        // Create a list of ports excluding user's port
+        $otherPorts = array_values(array_diff($validPorts, [$userPort]));
+
+        // // If we don't have enough ports, add some default ones
+        // while (count($otherPorts) < 3) {
+        //     $defaultPorts = ['SBY', 'MKS', 'MDN', 'JYP', 'BPN', 'BKS'];
+        //     foreach ($defaultPorts as $port) {
+        //         if (!in_array($port, $otherPorts) && $port !== $userPort) {
+        //             $otherPorts[] = $port;
+        //             break;
+        //         }
+        //     }
+        // }
+
+        // Limit to 4 ports max (including user port)
+        if (count($otherPorts) > 3) {
+            $otherPorts = array_slice($otherPorts, 0, 3);
         }
 
+        // Prepare container distribution
+        $portsToPlace = array_merge([$userPort], $otherPorts);
+
+        // Prepare container ID counter
         $nextId = 1;
         while (Card::where('id', (string)$nextId)->exists()) {
             $nextId++;
         }
 
-        // PHASE 1: Isi baris bawah saja
-        $bottomRowCandidates = [];
+        // Create a map to track containers we've placed for each port
+        $placedCounts = [];
+        foreach ($portsToPlace as $port) {
+            $placedCounts[$port] = 0;
+        }
+
+        // Define available positions - only bottom row first
+        $bottomPositions = [];
         for ($bay = 0; $bay < $bayCount; $bay++) {
             for ($col = 0; $col < $colCount; $col++) {
-                $bottomRowCandidates[] = ['bay' => $bay, 'col' => $col];
+                $bottomPositions[] = [
+                    'bay' => $bay,
+                    'row' => $bottomRowIndex,
+                    'col' => $col
+                ];
             }
         }
-        shuffle($bottomRowCandidates);
-        foreach ($bottomRowCandidates as $candidate) {
-            $bay = $candidate['bay'];
-            $col = $candidate['col'];
-            if (rand(1, 10) <= 7) { // 70% chance
-                $row = $bottomRowIndex;
-                $container = $this->createContainer($bay, $row, $col, $bayTypes, $userPort, $validPorts, $nextId++, $bottomRowIndex);
-                if ($container) {
-                    $arena[$bay][$row][$col] = $container['container_id'];
-                    $containerDestinations["$bay-$row-$col"] = $container['destination'];
-                    $containersPlaced++;
-                }
-                if ($containersPlaced >= $targetContainerCount) {
+
+        // Shuffle bottom positions
+        shuffle($bottomPositions);
+
+        // Step 1: Place containers in the bottom row first
+        foreach ($bottomPositions as $position) {
+            // If all ports have enough containers, stop
+            $allPortsFilled = true;
+            foreach ($portsToPlace as $port) {
+                if ($placedCounts[$port] < $containersPerPort) {
+                    $allPortsFilled = false;
                     break;
                 }
             }
+
+            if ($allPortsFilled) {
+                break;
+            }
+
+            // Find a port that needs more containers
+            $portToPlace = null;
+            foreach ($portsToPlace as $port) {
+                if ($placedCounts[$port] < $containersPerPort) {
+                    $portToPlace = $port;
+                    break;
+                }
+            }
+
+            if (!$portToPlace) {
+                continue;
+            }
+
+            $bay = $position['bay'];
+            $row = $position['row'];
+            $col = $position['col'];
+
+            // Skip if position already has a container
+            if ($arena[$bay][$row][$col] !== null) {
+                continue;
+            }
+
+            // Determine container properties
+            $destinationPort = $portToPlace;
+            $isForUserPort = $destinationPort === $userPort;
+            $originPort = $isForUserPort ? $otherPorts[array_rand($otherPorts)] : $userPort;
+
+            // Determine container type
+            $bayType = $bayTypes[$bay] ?? 'dry';
+            $containerType = $bayType === 'reefer' ? 'reefer' : 'dry';
+
+            // Create the container
+            $cardId = (string)$nextId++;
+            $revenue = rand(5000000, 15000000);
+            $priority = rand(1, 10) <= 5 ? "Committed" : "Non-Committed";
+
+            try {
+                $card = Card::create([
+                    'id' => $cardId,
+                    'type' => $containerType,
+                    'priority' => $priority,
+                    'origin' => $originPort,
+                    'destination' => $destinationPort,
+                    'quantity' => 1,
+                    'revenue' => $revenue,
+                    'is_initial' => true,
+                    'generated_for_room_id' => $room->id
+                ]);
+
+                $container = Container::create([
+                    'color' => $this->generateContainerColor($destinationPort),
+                    'card_id' => $cardId,
+                    'type' => $containerType
+                ]);
+
+                $arena[$bay][$row][$col] = $container->id;
+                $placedCounts[$destinationPort]++;
+            } catch (\Exception $e) {
+                Log::error("Failed to create container: " . $e->getMessage());
+                continue;
+            }
         }
 
-        // PHASE 2: Bangun stack dari bawah ke atas,
-        // pastikan tidak menumpuk container jika di bawahnya adalah container tujuan user.
-        $stackPositions = [];
-        for ($bay = 0; $bay < $bayCount; $bay++) {
-            for ($col = 0; $col < $colCount; $col++) {
-                if ($arena[$bay][$bottomRowIndex][$col] !== null) {
-                    $stackPositions[] = ['bay' => $bay, 'col' => $col];
-                }
-            }
-        }
-        shuffle($stackPositions);
-        for ($row = $rowCount - 2; $row >= 0; $row--) {
-            foreach ($stackPositions as $position) {
-                $bay = $position['bay'];
-                $col = $position['col'];
-                if ($arena[$bay][$row + 1][$col] !== null) {
-                    $keyBelow = "$bay-" . ($row + 1) . "-$col";
-                    // Jika container di bawah adalah tujuan user, jangan tumpuk apa pun.
-                    if (isset($containerDestinations[$keyBelow]) && $containerDestinations[$keyBelow] === $userPort) {
-                        continue;
-                    }
-                    $stackingChance = ($row === $bottomRowIndex - 1) ? 5 : (4 - ($bottomRowIndex - $row));
-                    if (rand(1, 10) <= $stackingChance && $containersPlaced < $targetContainerCount) {
-                        $container = $this->createContainer($bay, $row, $col, $bayTypes, $userPort, $validPorts, $nextId++, $bottomRowIndex);
-                        if ($container) {
-                            $arena[$bay][$row][$col] = $container['container_id'];
-                            $containerDestinations["$bay-$row-$col"] = $container['destination'];
-                            $containersPlaced++;
-                        }
-                    }
-                }
-                if ($containersPlaced >= $targetContainerCount) {
-                    break 2;
-                }
-            }
-        }
-
-        // PHASE 3: Isi celah jika target belum tercapai
-        if ($containersPlaced < $targetContainerCount) {
-            for ($row = $rowCount - 2; $row >= 0; $row--) {
-                for ($bay = 0; $bay < $bayCount; $bay++) {
-                    for ($col = 0; $col < $colCount; $col++) {
-                        if ($arena[$bay][$row + 1][$col] !== null && $arena[$bay][$row][$col] === null) {
-                            $keyBelow = "$bay-" . ($row + 1) . "-$col";
-                            if (isset($containerDestinations[$keyBelow]) && $containerDestinations[$keyBelow] === $userPort) {
-                                continue; // Jangan tumpuk di atas container tujuan user.
-                            }
-                            if (rand(1, 10) <= 3 && $containersPlaced < $targetContainerCount) {
-                                $container = $this->createContainer($bay, $row, $col, $bayTypes, $userPort, $validPorts, $nextId++, $bottomRowIndex);
-                                if ($container) {
-                                    $arena[$bay][$row][$col] = $container['container_id'];
-                                    $containerDestinations["$bay-$row-$col"] = $container['destination'];
-                                    $containersPlaced++;
-                                }
-                            }
-                        }
-                        if ($containersPlaced >= $targetContainerCount) {
-                            break 3;
-                        }
-                    }
-                }
-            }
+        // Log the counts we achieved
+        foreach ($placedCounts as $port => $count) {
+            Log::info("Port $port: Placed $count containers (target: $containersPerPort)");
         }
 
         return $arena;
@@ -626,6 +711,8 @@ class RoomController extends Controller
             'BKS' => 'orange',
             'BGR' => 'pink',
             'BTH' => 'brown',
+            'AMQ' => 'cyan',
+            'SMR' => 'teal',
         ];
 
         return $colorMap[$destination] ?? 'gray';
@@ -686,11 +773,17 @@ class RoomController extends Controller
         $validated = $request->validate([
             'room_id' => 'required|exists:rooms,id',
             'card_temporary_id' => 'required|exists:cards,id',
+            'round' => 'sometimes|integer|min:1',
         ]);
         $cardTemporary = CardTemporary::where('card_id', $validated['card_temporary_id'])
             ->where('room_id', $validated['room_id'])
             ->first();
         $cardTemporary->status = 'accepted';
+
+        if (isset($validatedData['round'])) {
+            $cardTemporary->round = $validatedData['round'];
+        }
+
         $cardTemporary->save();
 
         return response()->json(['message' => 'Sales call card accepted.']);
@@ -701,11 +794,17 @@ class RoomController extends Controller
         $validated = $request->validate([
             'room_id' => 'required|exists:rooms,id',
             'card_temporary_id' => 'required|exists:cards,id',
+            'round' => 'sometimes|integer|min:1',
         ]);
         $cardTemporary = CardTemporary::where('card_id', $validated['card_temporary_id'])
             ->where('room_id', $validated['room_id'])
             ->first();
         $cardTemporary->status = 'rejected';
+
+        if (isset($validatedData['round'])) {
+            $cardTemporary->round = $validatedData['round'];
+        }
+
         $cardTemporary->save();
 
         return response()->json(['message' => 'Sales call card rejected.']);

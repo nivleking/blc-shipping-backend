@@ -5,11 +5,13 @@ use App\Http\Controllers\ContainerController;
 use App\Http\Controllers\RoomController;
 use App\Http\Controllers\CardController;
 use App\Http\Controllers\DeckController;
+use App\Http\Controllers\MarketIntelligenceController;
 use App\Http\Controllers\ShipBayController;
 use App\Http\Controllers\ShipDockController;
 use App\Http\Controllers\ShipLayoutController;
 use App\Http\Controllers\SimulationLogController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\WeeklyPerformanceController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Route;
@@ -78,6 +80,16 @@ Route::delete('decks/{deck}/remove-card/{salesCallCard}', [DeckController::class
 Route::delete('decks/{deck}/cards', [DeckController::class, 'removeAllCards']);
 Route::post('decks/{deck}/import-cards', [CardController::class, 'importFromExcel']);
 
+// Market Intelligence Routes
+Route::get('/decks/{deck}/market-intelligence', [MarketIntelligenceController::class, 'index']);
+Route::get('/decks/{deck}/market-intelligence/active', [MarketIntelligenceController::class, 'getActive']);
+Route::post('/decks/{deck}/market-intelligence', [MarketIntelligenceController::class, 'store']);
+Route::post('/decks/{deck}/market-intelligence/generate-default', [MarketIntelligenceController::class, 'generateDefault']);
+Route::get('/decks/{deck}/market-intelligence/exists', [MarketIntelligenceController::class, 'exists']);
+Route::get('/market-intelligence/{marketIntelligence}', [MarketIntelligenceController::class, 'show']);
+Route::put('/market-intelligence/{marketIntelligence}', [MarketIntelligenceController::class, 'update']);
+Route::delete('/market-intelligence/{marketIntelligence}', [MarketIntelligenceController::class, 'destroy']);
+
 // Admin - Card Routes
 Route::get('cards', [CardController::class, 'index']);
 Route::post('cards', [CardController::class, 'store']);
@@ -85,8 +97,6 @@ Route::get('cards/{card}', [CardController::class, 'show']);
 Route::put('cards/{card}', [CardController::class, 'update']);
 Route::delete('cards/{card}', [CardController::class, 'destroy']);
 
-// TODO:
-// 1. Market intelligence
 Route::post('generate-cards/{deck}', [CardController::class, 'generate']);
 
 // Admin - Container Routes
@@ -171,3 +181,8 @@ Route::get('simulation-logs/{roomId}/{userId}', [SimulationLogController::class,
 Route::get('/capacity-uptake/weeks/{roomId}/{userId}', [CapacityUptakeController::class, 'getWeeksByRoomUser']);
 Route::get('/capacity-uptake/{roomId}/{userId}/{week}', [CapacityUptakeController::class, 'getByRoomUserWeek']);
 Route::post('/capacity-uptake', [CapacityUptakeController::class, 'saveOrUpdate']);
+
+// Weekly Performance Routes
+Route::get('/rooms/{roomId}/weekly-performance/{userId}', [WeeklyPerformanceController::class, 'getWeeklyPerformance']);
+Route::post('/rooms/{roomId}/weekly-performance/{userId}', [WeeklyPerformanceController::class, 'storeWeeklyPerformance']);
+Route::put('/rooms/{roomId}/weekly-performance/{userId}/{weekNumber}', [WeeklyPerformanceController::class, 'updateWeek']);

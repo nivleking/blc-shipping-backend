@@ -87,9 +87,51 @@ class CardController extends Controller
             'revenue' => 'integer',
         ]);
 
+        // Store the old values for comparison
+        $oldType = $card->type;
+        $oldDestination = $card->destination;
+        $oldQuantity = $card->quantity;
+
+        // Update the card
         $card->update($validated);
 
-        return response()->json($card, 200);
+        // If destination has changed, update all container colors
+        if (isset($validated['destination']) && $oldDestination !== $validated['destination']) {
+            // Get the new color based on the destination
+            $newColor = $this->generateContainerColor($validated['destination']);
+
+            // Update all containers associated with this card
+            $card->containers()->update(['color' => $newColor]);
+        }
+
+        // If type has changed, update all containers
+        if (isset($validated['type']) && $oldType !== $validated['type']) {
+            $card->containers()->update(['type' => $validated['type']]);
+        }
+
+        // Handle quantity changes (add or remove containers as needed)
+        if (isset($validated['quantity']) && $oldQuantity !== $validated['quantity']) {
+            if ($validated['quantity'] > $oldQuantity) {
+                // Add new containers
+                $containersToAdd = $validated['quantity'] - $oldQuantity;
+                $containerType = $card->type;
+                $containerColor = $this->generateContainerColor($card->destination);
+
+                for ($i = 0; $i < $containersToAdd; $i++) {
+                    $card->containers()->create([
+                        'type' => $containerType,
+                        'color' => $containerColor
+                    ]);
+                }
+            } else if ($validated['quantity'] < $oldQuantity) {
+                // Remove excess containers
+                $containersToRemove = $oldQuantity - $validated['quantity'];
+                $card->containers()->latest()->take($containersToRemove)->delete();
+            }
+        }
+
+        // Return the updated card with its containers
+        return response()->json($card->load('containers'), 200);
     }
 
     public function destroy(Card $card)
@@ -101,14 +143,7 @@ class CardController extends Controller
 
     public function generate(Request $request, Deck $deck)
     {
-        // Clear existing cards
-        if ($deck->cards()->count() > 0) {
-            foreach ($deck->cards as $card) {
-                $deck->cards()->detach($card->id);
-                $card->delete();
-            }
-        }
-
+        $this->destroyAllCardsInDeck($deck);
         $validated = $request->validate([
             'totalRevenueEachPort' => 'required|numeric',
             'totalContainerQuantityEachPort' => 'required|numeric',
@@ -116,10 +151,39 @@ class CardController extends Controller
             'ports' => 'required|numeric',
             'quantityStandardDeviation' => 'required|numeric',
             'revenueStandardDeviation' => 'required|numeric',
+            'useMarketIntelligence' => 'boolean',
         ]);
 
+        $useMarketIntelligence = isset($validated['useMarketIntelligence']) ? $validated['useMarketIntelligence'] : true;
+
+        $basePriceMap = [];
         $ports = $this->getPorts($validated['ports']);
-        $basePriceMap = $this->getBasePriceMap();
+
+        if ($useMarketIntelligence) {
+            $marketIntelligence = $deck->activeMarketIntelligence();
+
+            if ($marketIntelligence && !empty($marketIntelligence->price_data)) {
+                $basePriceMap = $marketIntelligence->price_data;
+
+                $portSet = [];
+                foreach (array_keys($marketIntelligence->price_data) as $key) {
+                    $parts = explode('-', $key);
+                    if (!in_array($parts[0], $portSet)) {
+                        $portSet[] = $parts[0];
+                    }
+                }
+
+                if (count($portSet) >= 2) {
+                    $ports = $portSet;
+                    $validated['ports'] = count($ports);
+                }
+            } else {
+                $basePriceMap = $this->getBasePriceMap();
+            }
+        } else {
+            $basePriceMap = $this->getBasePriceMap();
+        }
+
         $targetRevenue = $validated['totalRevenueEachPort'];
         $targetContainers = $validated['totalContainerQuantityEachPort'];
         $salesCallsCount = $validated['salesCallCountEachPort'];
@@ -132,7 +196,7 @@ class CardController extends Controller
         }
 
         foreach ($ports as $originPort) {
-            // Pre-distribute containers (ensuring total 15)
+            // Pre-distribute containers (ensuring total matches target)
             $quantities = array_fill(0, $salesCallsCount, 1);
             $remainingContainers = $targetContainers - $salesCallsCount;
 
@@ -147,14 +211,15 @@ class CardController extends Controller
             $portCalls = [];
 
             for ($i = 0; $i < $salesCallsCount; $i++) {
-                $containerType = ($id % 5 == 0) ? "reefer" : "dry";
+                $containerType = ($id % 5 == 0) ? "Reefer" : "Dry";
 
                 do {
                     $destinationPort = $ports[array_rand($ports)];
                 } while ($destinationPort === $originPort);
 
                 $key = "$originPort-$destinationPort-$containerType";
-                $basePrice = $basePriceMap[$key] ?? 10000000;
+
+                $basePrice = isset($basePriceMap[$key]) ? $basePriceMap[$key] : 10000000;
 
                 // Round revenue per container to nearest 50,000
                 $revenuePerContainer = round(
@@ -166,56 +231,53 @@ class CardController extends Controller
                 $portRevenue += $revenue;
 
                 $portCalls[] = [
-                    'id' => (string)$id, // Convert to string as per validation
-                    'type' => $containerType,
-                    'priority' => rand(0, 1) ? "Committed" : "Non-Committed",
+                    'id' => $id++,
+                    'type' => strtolower($containerType),
+                    'priority' => (rand(1, 100) <= 50) ? "Committed" : "Non-Committed",
                     'origin' => $originPort,
                     'destination' => $destinationPort,
                     'quantity' => $quantities[$i],
                     'revenue' => $revenue,
-                    'revenuePerContainer' => $revenuePerContainer
                 ];
-
-                $id++;
             }
 
-            // Scale revenues to match target while maintaining 50,000 increments
-            $revenueFactor = $targetRevenue / $portRevenue;
-            foreach ($portCalls as &$call) {
-                $newRevenuePerContainer = round(($call['revenuePerContainer'] * $revenueFactor) / 50000) * 50000;
-                $call['revenue'] = $newRevenuePerContainer * $call['quantity'];
-                unset($call['revenuePerContainer']);
+            if ($portRevenue > 0) {
+                $revenueFactor = $targetRevenue / $portRevenue;
+                foreach ($portCalls as &$call) {
+                    $call['revenue'] = round(($call['revenue'] * $revenueFactor) / 50000) * 50000;
+                }
             }
 
             // Fix any remaining difference in largest call
             $actualRevenue = array_sum(array_column($portCalls, 'revenue'));
             $remainingRevenue = $targetRevenue - $actualRevenue;
-            if ($remainingRevenue != 0) {
-                $maxRevenueIndex = array_search(max(array_column($portCalls, 'revenue')), array_column($portCalls, 'revenue'));
-                $portCalls[$maxRevenueIndex]['revenue'] += $remainingRevenue;
+            if ($remainingRevenue != 0 && count($portCalls) > 0) {
+                // Find the largest revenue call
+                $maxRevenueKey = 0;
+                for ($i = 1; $i < count($portCalls); $i++) {
+                    if ($portCalls[$i]['revenue'] > $portCalls[$maxRevenueKey]['revenue']) {
+                        $maxRevenueKey = $i;
+                    }
+                }
+                $portCalls[$maxRevenueKey]['revenue'] += $remainingRevenue;
             }
 
             $salesCalls = array_merge($salesCalls, $portCalls);
         }
 
-        // Save to database
         foreach ($salesCalls as $salesCallData) {
-            // Buat request baru dengan data sales call
             $cardRequest = new Request([
-                'id' => $salesCallData['id'],
+                'id' => (string)$salesCallData['id'],
                 'type' => $salesCallData['type'],
                 'priority' => $salesCallData['priority'],
                 'origin' => $salesCallData['origin'],
                 'destination' => $salesCallData['destination'],
                 'quantity' => $salesCallData['quantity'],
                 'revenue' => $salesCallData['revenue'],
-                'mode' => 'auto_generate', // Set mode ke auto_generate
+                'mode' => 'auto_generate',
             ]);
 
-            // Panggil store method dengan request baru
             $response = $this->store($cardRequest);
-
-            // Parse response JSON untuk mendapatkan card
             $responseData = json_decode($response->getContent());
             $salesCall = Card::find($responseData->id);
 
@@ -476,6 +538,7 @@ class CardController extends Controller
 
     public function importFromExcel(Request $request, Deck $deck)
     {
+        $this->destroyAllCardsInDeck($deck);
         $request->validate([
             'file' => 'required|file|mimes:xlsx,xls',
         ]);
@@ -605,6 +668,17 @@ class CardController extends Controller
                 'message' => 'An error occurred during import',
                 'error' => $e->getMessage()
             ], 500);
+        }
+    }
+
+    private function destroyAllCardsInDeck(Deck $deck)
+    {
+        // Clear existing cards
+        if ($deck->cards()->count() > 0) {
+            foreach ($deck->cards as $card) {
+                $deck->cards()->detach($card->id);
+                $card->delete();
+            }
         }
     }
 }

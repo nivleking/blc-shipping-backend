@@ -19,7 +19,10 @@ class Card extends Model
         'origin',
         'destination',
         'quantity',
-        'revenue'
+        'revenue',
+        'is_committed',
+        'is_initial',
+        'generated_for_room_id',
     ];
 
     protected $hidden = [
@@ -30,6 +33,8 @@ class Card extends Model
     protected $casts = [
         'quantity' => 'integer',
         'revenue' => 'integer',
+        'is_committed' => 'boolean',
+        'is_initial' => 'boolean',
     ];
 
     public function decks()

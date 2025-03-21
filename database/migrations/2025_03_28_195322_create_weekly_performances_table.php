@@ -1,3 +1,4 @@
+php
 <?php
 
 use Illuminate\Database\Migrations\Migration;
@@ -11,15 +12,12 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('card_temporaries', function (Blueprint $table) {
+        Schema::create('weekly_performances', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('user_id')->constrained()->onDelete('cascade');
+            $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
             $table->string('room_id');
             $table->foreign('room_id')->references('id')->on('rooms')->onDelete('cascade');
-            $table->string('card_id');
-            $table->foreign('card_id')->references('id')->on('cards')->onDelete('cascade');
-            $table->string('status')->default('selected');
-            $table->integer('round')->default(1);
+            $table->json('data');
             $table->timestamps();
         });
     }
@@ -29,6 +27,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('card_temporary');
+        Schema::dropIfExists('weekly_performances');
     }
 };

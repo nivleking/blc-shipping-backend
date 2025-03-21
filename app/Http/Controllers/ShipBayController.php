@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Room;
 use App\Models\ShipBay;
 use Illuminate\Http\Request;
 
@@ -138,15 +139,27 @@ class ShipBayController extends Controller
             return response()->json(['message' => 'Ship bay not found'], 404);
         }
 
+        $room = Room::find($roomId);
+
         if ($validatedData['card_action'] === 'accept') {
             $shipBay->increment('accepted_cards', $validatedData['count']);
+            $shipBay->increment('processed_cards', $validatedData['count']);
         } else {
             $shipBay->increment('rejected_cards', $validatedData['count']);
         }
+        $shipBay->increment('current_round_cards');
 
-        $shipBay->current_round_cards = $shipBay->current_round_cards + 1;
-        $shipBay->save();
+        $totalProcessed = $shipBay->accepted_cards + $shipBay->rejected_cards;
+        $isLimitExceeded = $totalProcessed >= $room->cards_limit_per_round;
 
-        return response()->json(['current_round_cards' => $shipBay->current_round_cards]);
+        return response()->json([
+            'processed_cards' => $shipBay->processed_cards,
+            'current_round_cards' => $shipBay->current_round_cards,
+            'accepted_cards' => $shipBay->accepted_cards,
+            'rejected_cards' => $shipBay->rejected_cards,
+            'must_process_complete' => $shipBay->processed_cards >= $room->cards_must_process_per_round,
+            'limit_exceeded' => $isLimitExceeded,
+            'remaining_cards' => max(0, $room->cards_limit_per_round - $totalProcessed)
+        ]);
     }
 }

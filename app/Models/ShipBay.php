@@ -19,6 +19,7 @@ class ShipBay extends Model
         'penalty',
         'discharge_moves',
         'load_moves',
+        'processed_cards',
         'accepted_cards',
         'rejected_cards',
         'current_round',

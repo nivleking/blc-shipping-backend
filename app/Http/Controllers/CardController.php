@@ -87,9 +87,51 @@ class CardController extends Controller
             'revenue' => 'integer',
         ]);
 
+        // Store the old values for comparison
+        $oldType = $card->type;
+        $oldDestination = $card->destination;
+        $oldQuantity = $card->quantity;
+
+        // Update the card
         $card->update($validated);
 
-        return response()->json($card, 200);
+        // If destination has changed, update all container colors
+        if (isset($validated['destination']) && $oldDestination !== $validated['destination']) {
+            // Get the new color based on the destination
+            $newColor = $this->generateContainerColor($validated['destination']);
+
+            // Update all containers associated with this card
+            $card->containers()->update(['color' => $newColor]);
+        }
+
+        // If type has changed, update all containers
+        if (isset($validated['type']) && $oldType !== $validated['type']) {
+            $card->containers()->update(['type' => $validated['type']]);
+        }
+
+        // Handle quantity changes (add or remove containers as needed)
+        if (isset($validated['quantity']) && $oldQuantity !== $validated['quantity']) {
+            if ($validated['quantity'] > $oldQuantity) {
+                // Add new containers
+                $containersToAdd = $validated['quantity'] - $oldQuantity;
+                $containerType = $card->type;
+                $containerColor = $this->generateContainerColor($card->destination);
+
+                for ($i = 0; $i < $containersToAdd; $i++) {
+                    $card->containers()->create([
+                        'type' => $containerType,
+                        'color' => $containerColor
+                    ]);
+                }
+            } else if ($validated['quantity'] < $oldQuantity) {
+                // Remove excess containers
+                $containersToRemove = $oldQuantity - $validated['quantity'];
+                $card->containers()->latest()->take($containersToRemove)->delete();
+            }
+        }
+
+        // Return the updated card with its containers
+        return response()->json($card->load('containers'), 200);
     }
 
     public function destroy(Card $card)
@@ -191,7 +233,7 @@ class CardController extends Controller
                 $portCalls[] = [
                     'id' => $id++,
                     'type' => strtolower($containerType),
-                    'priority' => (rand(1, 100) <= 70) ? "Committed" : "Non-Committed",
+                    'priority' => (rand(1, 100) <= 50) ? "Committed" : "Non-Committed",
                     'origin' => $originPort,
                     'destination' => $destinationPort,
                     'quantity' => $quantities[$i],

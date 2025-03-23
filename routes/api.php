@@ -148,6 +148,8 @@ Route::get('ship-bays/{room}/{user}', [ShipBayController::class, 'showBayByUserA
 Route::put('/ship-bays/{room}/{user}/section', [ShipBayController::class, 'updateSection']);
 Route::post('/ship-bays/{room}/{user}/moves', [ShipBayController::class, 'incrementMoves'])->middleware('auth:sanctum');
 Route::post('/ship-bays/{room}/{user}/cards', [ShipBayController::class, 'incrementCards'])->middleware('auth:sanctum');
+Route::get('ship-bays/{room}/{user}/statistics', [ShipBayController::class, 'getBayStatistics']);
+Route::get('/rooms/{roomId}/users/{userId}/bay-statistics-history/{week?}', [ShipBayController::class, 'getBayStatisticsHistory'])->middleware('auth:sanctum');
 
 // ShipLayout Routes
 Route::middleware('auth:sanctum')->group(function () {

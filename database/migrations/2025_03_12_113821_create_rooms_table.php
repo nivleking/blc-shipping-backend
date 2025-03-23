@@ -26,6 +26,7 @@ return new class extends Migration
             $table->integer('bay_count')->default(0);
             $table->json('bay_types')->nullable();
             $table->integer('total_rounds')->default(1);
+            $table->bigInteger('move_cost')->default(1000000);
             $table->integer('cards_limit_per_round')->default(1);
             $table->integer('cards_must_process_per_round')->default(1);
             $table->json('swap_config')->nullable();

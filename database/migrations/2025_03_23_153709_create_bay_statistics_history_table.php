@@ -11,30 +11,21 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('ship_bays', function (Blueprint $table) {
+        Schema::create('bay_statistics_history', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->constrained();
             $table->string('room_id');
             $table->foreign('room_id')->references('id')->on('rooms')->onDelete('cascade');
-            $table->string('port');
-            $table->json('arena');
-            $table->string('section')->default('section1');
-            $table->bigInteger('revenue')->default(0);
-            $table->bigInteger('penalty')->default(0);
-            $table->bigInteger('total_revenue')->default(0);
+            $table->integer('week');
             $table->unsignedBigInteger('discharge_moves')->default(0);
             $table->unsignedBigInteger('load_moves')->default(0);
-            $table->unsignedBigInteger('processed_cards')->default(0);
-            $table->unsignedBigInteger('accepted_cards')->default(0);
-            $table->unsignedBigInteger('rejected_cards')->default(0);
-            $table->integer('current_round')->default(1);
-            $table->integer('current_round_cards')->default(0);
             $table->json('bay_pairs')->nullable();
             $table->json('bay_moves')->nullable();
-            $table->integer('ideal_crane_split')->default(2);
             $table->integer('long_crane_moves')->default(0);
             $table->integer('extra_moves_on_long_crane')->default(0);
             $table->timestamps();
+
+            $table->unique(['user_id', 'room_id', 'week']);
         });
     }
 
@@ -43,6 +34,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('ship_bays');
+        Schema::dropIfExists('bay_statistics_history');
     }
 };

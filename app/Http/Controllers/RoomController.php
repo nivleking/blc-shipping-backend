@@ -124,20 +124,19 @@ class RoomController extends Controller
             'description' => 'string',
             'total_rounds' => 'integer|min:1',
             'cards_limit_per_round' => 'integer|min:1',
+            'move_cost' => 'integer|min:1',
             'assigned_users' => 'array',
             'assigned_users.*' => 'exists:users,id',
             'deck' => 'exists:decks,id',
             'ship_layout' => 'exists:ship_layouts,id',
         ]);
 
-        $room->name = $validated['name'];
-        $room->description = $validated['description'];
-        $room->total_rounds = $validated['total_rounds'];
-        $room->cards_limit_per_round = $validated['cards_limit_per_round'];
-
-        if (isset($validated['move_cost'])) {
-            $room->move_cost = $validated['move_cost'];
-        }
+        if (isset($validated['name'])) $room->name = $validated['name'];
+        if (isset($validated['description'])) $room->description = $validated['description'];
+        if (isset($validated['total_rounds'])) $room->total_rounds = $validated['total_rounds'];
+        if (isset($validated['cards_limit_per_round'])) $room->cards_limit_per_round = $validated['cards_limit_per_round'];
+        if (isset($validated['cards_must_process_per_round'])) $room->cards_must_process_per_round = $validated['cards_must_process_per_round'];
+        if (isset($validated['move_cost'])) $room->move_cost = $validated['move_cost'];
 
         if (isset($validated['assigned_users'])) {
             $room->assigned_users = json_encode($validated['assigned_users']);

@@ -181,16 +181,16 @@ class WeeklyPerformanceController extends Controller
             'totalPenalties' => 0,
             'penaltyMatrix' => [
                 'dry' => [
-                    'committed' => 16000000,
-                    'nonCommitted' => 8000000,
+                    'committed' => 0,
+                    'nonCommitted' => 0,
                 ],
                 'reefer' => [
-                    'committed' => 24000000,
-                    'nonCommitted' => 16000000,
+                    'committed' => 0,
+                    'nonCommitted' => 0,
                 ],
-                'additionalRolledPenalty' => 8000000,
-                'restowPenalty' => 3000000,
-                'longCranePenalty' => 1000000,
+                'additionalRolledPenalty' => 0,
+                'restowPenalty' => 0,
+                'longCranePenalty' => 0,
             ]
         ];
     }

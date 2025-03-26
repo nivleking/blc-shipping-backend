@@ -148,6 +148,8 @@ Route::get('ship-bays/{room}/{user}', [ShipBayController::class, 'showBayByUserA
 Route::put('/ship-bays/{room}/{user}/section', [ShipBayController::class, 'updateSection']);
 Route::post('/ship-bays/{room}/{user}/moves', [ShipBayController::class, 'incrementMoves'])->middleware('auth:sanctum');
 Route::post('/ship-bays/{room}/{user}/cards', [ShipBayController::class, 'incrementCards'])->middleware('auth:sanctum');
+Route::get('ship-bays/{room}/{user}/statistics', [ShipBayController::class, 'getBayStatistics']);
+Route::get('/rooms/{roomId}/users/{userId}/bay-statistics-history/{week?}', [ShipBayController::class, 'getBayStatisticsHistory'])->middleware('auth:sanctum');
 
 // ShipLayout Routes
 Route::middleware('auth:sanctum')->group(function () {
@@ -177,12 +179,10 @@ Route::get('simulation-logs/{simulationLog}', [SimulationLogController::class, '
 Route::delete('simulation-logs/{simulationLog}', [SimulationLogController::class, 'destroy'])->middleware('auth:sanctum', 'admin');
 Route::get('simulation-logs/{roomId}/{userId}', [SimulationLogController::class, 'getByRoomAndUser']);
 
-// Capacity Uptake Routes
-Route::get('/capacity-uptake/weeks/{roomId}/{userId}', [CapacityUptakeController::class, 'getWeeksByRoomUser']);
-Route::get('/capacity-uptake/{roomId}/{userId}/{week}', [CapacityUptakeController::class, 'getByRoomUserWeek']);
-Route::post('/capacity-uptake', [CapacityUptakeController::class, 'saveOrUpdate']);
-
 // Weekly Performance Routes
-Route::get('/rooms/{roomId}/weekly-performance/{userId}', [WeeklyPerformanceController::class, 'getWeeklyPerformance']);
-Route::post('/rooms/{roomId}/weekly-performance/{userId}', [WeeklyPerformanceController::class, 'storeWeeklyPerformance']);
-Route::put('/rooms/{roomId}/weekly-performance/{userId}/{weekNumber}', [WeeklyPerformanceController::class, 'updateWeek']);
+Route::get('/rooms/{roomId}/users/{userId}/weekly-performance/{week?}', [WeeklyPerformanceController::class, 'getWeeklyPerformance']);
+Route::post('/rooms/{roomId}/users/{userId}/weekly-performance/{week}', [WeeklyPerformanceController::class, 'updateWeeklyPerformance']);
+
+// Capacity Uptake Routes
+Route::get('/capacity-uptakes/{roomId}/{userId}/{week?}', [CapacityUptakeController::class, 'getCapacityUptake']);
+Route::post('/capacity-uptakes/{roomId}/{userId}/{week}', [CapacityUptakeController::class, 'updateCapacityUptake']);

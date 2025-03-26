@@ -1,4 +1,3 @@
-php
 <?php
 
 use Illuminate\Database\Migrations\Migration;
@@ -14,11 +13,31 @@ return new class extends Migration
     {
         Schema::create('weekly_performances', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
+            $table->foreignId('user_id')->constrained();
             $table->string('room_id');
             $table->foreign('room_id')->references('id')->on('rooms')->onDelete('cascade');
-            $table->json('data');
+            $table->integer('week');
+            $table->integer('dry_containers_loaded')->default(0);
+            $table->integer('reefer_containers_loaded')->default(0);
+            $table->integer('dry_containers_not_loaded')->default(0);
+            $table->integer('reefer_containers_not_loaded')->default(0);
+            $table->integer('committed_dry_containers_not_loaded')->default(0);
+            $table->integer('committed_reefer_containers_not_loaded')->default(0);
+            $table->integer('non_committed_dry_containers_not_loaded')->default(0);
+            $table->integer('non_committed_reefer_containers_not_loaded')->default(0);
+            $table->bigInteger('revenue')->default(0);
+            $table->bigInteger('move_costs')->default(0);
+            $table->bigInteger('extra_moves_penalty')->default(0);
+            $table->bigInteger('net_result')->default(0);
+            $table->integer('discharge_moves')->default(0);
+            $table->integer('load_moves')->default(0);
+            $table->integer('long_crane_moves')->default(0);
+            $table->integer('extra_moves_on_long_crane')->default(0);
+            $table->integer('ideal_crane_split')->default(0);
             $table->timestamps();
+
+            // Unique constraint to prevent duplicates
+            $table->unique(['user_id', 'room_id', 'week']);
         });
     }
 

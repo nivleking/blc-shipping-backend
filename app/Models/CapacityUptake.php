@@ -10,26 +10,42 @@ class CapacityUptake extends Model
     use HasFactory;
 
     protected $fillable = [
-        'room_id',
         'user_id',
+        'room_id',
         'week',
-        'capacity_data',
-        'sales_calls_data',
+        'port',
+        'accepted_cards',
+        'rejected_cards',
+        'dry_containers_accepted',
+        'reefer_containers_accepted',
+        'committed_containers_accepted',
+        'non_committed_containers_accepted',
+        'dry_containers_rejected',
+        'reefer_containers_rejected',
+        'committed_containers_rejected',
+        'non_committed_containers_rejected'
     ];
 
     protected $casts = [
-        'capacity_data' => 'array',
-        'sales_calls_data' => 'array',
-        'week' => 'integer',
+        'accepted_cards' => 'array',
+        'rejected_cards' => 'array',
+        'dry_containers_accepted' => 'integer',
+        'reefer_containers_accepted' => 'integer',
+        'committed_containers_accepted' => 'integer',
+        'non_committed_containers_accepted' => 'integer',
+        'dry_containers_rejected' => 'integer',
+        'reefer_containers_rejected' => 'integer',
+        'committed_containers_rejected' => 'integer',
+        'non_committed_containers_rejected' => 'integer',
     ];
-
-    public function room()
-    {
-        return $this->belongsTo(Room::class);
-    }
 
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function room()
+    {
+        return $this->belongsTo(Room::class);
     }
 }

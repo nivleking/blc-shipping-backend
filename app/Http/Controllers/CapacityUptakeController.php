@@ -5,82 +5,139 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StoreCapacityUptakeRequest;
 use App\Http\Requests\UpdateCapacityUptakeRequest;
 use App\Models\CapacityUptake;
-use App\Models\Room;
-use App\Models\User;
+use App\Models\ShipBay;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 
 class CapacityUptakeController extends Controller
 {
     /**
-     * Get capacity uptake data for a specific room, user, and week.
+     * Display capacity uptake data
      */
-    public function getByRoomUserWeek($roomId, $userId, $week)
+    public function getCapacityUptake($roomId, $userId, $week = null)
     {
-        $capacityUptake = CapacityUptake::where('room_id', $roomId)
-            ->where('user_id', $userId)
-            ->where('week', $week)
-            ->first();
+        if ($week) {
+            $capacityUptake = CapacityUptake::where('room_id', $roomId)
+                ->where('user_id', $userId)
+                ->where('week', $week)
+                ->first();
+        } else {
+            $capacityUptake = CapacityUptake::where('room_id', $roomId)
+                ->where('user_id', $userId)
+                ->orderBy('week', 'desc')
+                ->first();
+        }
 
         if (!$capacityUptake) {
             return response()->json([
-                'message' => 'Capacity uptake data not found',
-                'data' => null
-            ], 404);
+                'data' => $this->generateDefaultCapacityData($roomId, $userId, $week)
+            ], 200);
         }
 
         return response()->json([
             'message' => 'Capacity uptake data retrieved successfully',
             'data' => $capacityUptake
-        ]);
+        ], 200);
     }
 
     /**
-     * Save or update capacity uptake data.
+     * Update capacity uptake with card info
      */
-    public function saveOrUpdate(Request $request)
+    public function updateCapacityUptake(Request $request, $roomId, $userId, $week)
     {
         $request->validate([
-            'room_id' => 'required|string|exists:rooms,id',
-            'user_id' => 'required|exists:users,id',
-            'week' => 'required|integer|min:1',
-            'capacity_data' => 'required|array',
-            'sales_calls_data' => 'nullable|array'
+            'card_action' => 'required|string|in:accept,reject',
+            'card' => 'required|array',
+            'port' => 'required|string',
         ]);
 
-        $capacityUptake = CapacityUptake::updateOrCreate(
-            [
-                'room_id' => $request->room_id,
-                'user_id' => $request->user_id,
-                'week' => $request->week
-            ],
-            [
-                'capacity_data' => $request->capacity_data,
-                'sales_calls_data' => $request->sales_calls_data
-            ]
-        );
+        $capacityUptake = CapacityUptake::firstOrNew([
+            'room_id' => $roomId,
+            'user_id' => $userId,
+            'week' => $week,
+            'port' => $request->port,
+        ]);
+
+        $card = $request->card;
+        $isCommitted = strtolower($card['priority']) === 'committed';
+        $isDry = strtolower($card['type']) === 'dry';
+        $quantity = $card['quantity'] ?? 1;
+
+        if ($request->card_action === 'accept') {
+            $acceptedCards = $capacityUptake->accepted_cards ?? [];
+            $card['processed_at'] = now()->timestamp;
+            $acceptedCards[] = $card;
+            $capacityUptake->accepted_cards = $acceptedCards;
+
+            if ($isDry) {
+                $capacityUptake->dry_containers_accepted = ($capacityUptake->dry_containers_accepted ?? 0) + $quantity;
+            } else {
+                $capacityUptake->reefer_containers_accepted = ($capacityUptake->reefer_containers_accepted ?? 0) + $quantity;
+            }
+
+            if ($isCommitted) {
+                $capacityUptake->committed_containers_accepted = ($capacityUptake->committed_containers_accepted ?? 0) + $quantity;
+            } else {
+                $capacityUptake->non_committed_containers_accepted = ($capacityUptake->non_committed_containers_accepted ?? 0) + $quantity;
+            }
+        } else {
+            $rejectedCards = $capacityUptake->rejected_cards ?? [];
+            $rejectedCards[] = $card;
+            $capacityUptake->rejected_cards = $rejectedCards;
+
+            if ($isDry) {
+                $capacityUptake->dry_containers_rejected = ($capacityUptake->dry_containers_rejected ?? 0) + $quantity;
+            } else {
+                $capacityUptake->reefer_containers_rejected = ($capacityUptake->reefer_containers_rejected ?? 0) + $quantity;
+            }
+
+            if ($isCommitted) {
+                $capacityUptake->committed_containers_rejected = ($capacityUptake->committed_containers_rejected ?? 0) + $quantity;
+            } else {
+                $capacityUptake->non_committed_containers_rejected = ($capacityUptake->non_committed_containers_rejected ?? 0) + $quantity;
+            }
+        }
+
+        $capacityUptake->save();
 
         return response()->json([
-            'message' => 'Capacity uptake data saved successfully',
+            'message' => 'Capacity uptake data updated successfully',
             'data' => $capacityUptake
-        ]);
+        ], 200);
     }
 
     /**
-     * Get all capacity uptake weeks for a user in a room.
+     * Generate default capacity data
      */
-    public function getWeeksByRoomUser($roomId, $userId)
+    private function generateDefaultCapacityData($roomId, $userId, $week = null)
     {
-        $weeks = CapacityUptake::where('room_id', $roomId)
-            ->where('user_id', $userId)
-            ->orderBy('week')
-            ->pluck('week')
-            ->toArray(); // Convert to array for consistent response
+        // Get current week if not specified
+        if (!$week) {
+            $shipBay = ShipBay::where('room_id', $roomId)
+                ->where('user_id', $userId)
+                ->first();
+            $week = $shipBay ? $shipBay->current_round : 1;
+        }
 
-        // Always return a 200 response, even if no data found
-        return response()->json([
-            'message' => count($weeks) > 0 ? 'Capacity uptake weeks retrieved successfully' : 'No capacity uptake data found yet',
-            'data' => $weeks
-        ]);
+        // Get port
+        $port = ShipBay::where('room_id', $roomId)
+            ->where('user_id', $userId)
+            ->value('port') ?? '';
+
+        return [
+            'user_id' => $userId,
+            'room_id' => $roomId,
+            'week' => $week,
+            'port' => $port,
+            'accepted_cards' => [],
+            'rejected_cards' => [],
+            'dry_containers_accepted' => 0,
+            'reefer_containers_accepted' => 0,
+            'committed_containers_accepted' => 0,
+            'non_committed_containers_accepted' => 0,
+            'dry_containers_rejected' => 0,
+            'reefer_containers_rejected' => 0,
+            'committed_containers_rejected' => 0,
+            'non_committed_containers_rejected' => 0,
+        ];
     }
 }

@@ -29,6 +29,8 @@ return [
         'http://kelvinsidhartasie.my.id',
         'https://kelvinsidhartasie.my.id',
         'https://frontend.kelvinsidhartasie.my.id',
+        'https://blc.works',
+        'http://blc.works',
     ],
 
     'allowed_origins_patterns' => [

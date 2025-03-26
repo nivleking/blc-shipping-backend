@@ -4,6 +4,7 @@ use App\Http\Controllers\CapacityUptakeController;
 use App\Http\Controllers\ContainerController;
 use App\Http\Controllers\RoomController;
 use App\Http\Controllers\CardController;
+use App\Http\Controllers\CardTemporaryController;
 use App\Http\Controllers\DeckController;
 use App\Http\Controllers\MarketIntelligenceController;
 use App\Http\Controllers\ShipBayController;

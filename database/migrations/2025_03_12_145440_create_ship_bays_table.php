@@ -21,6 +21,7 @@ return new class extends Migration
             $table->string('section')->default('section1');
             $table->bigInteger('revenue')->default(0);
             $table->bigInteger('penalty')->default(0);
+            $table->bigInteger('extra_moves_penalty')->default(0);
             $table->bigInteger('total_revenue')->default(0);
             $table->unsignedBigInteger('discharge_moves')->default(0);
             $table->unsignedBigInteger('load_moves')->default(0);
@@ -31,7 +32,6 @@ return new class extends Migration
             $table->integer('current_round_cards')->default(0);
             $table->json('bay_pairs')->nullable();
             $table->json('bay_moves')->nullable();
-            $table->integer('ideal_crane_split')->default(2);
             $table->integer('long_crane_moves')->default(0);
             $table->integer('extra_moves_on_long_crane')->default(0);
             $table->timestamps();

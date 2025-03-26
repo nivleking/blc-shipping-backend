@@ -36,6 +36,8 @@ class RoomController extends Controller
             'ship_layout' => 'required|exists:ship_layouts,id',
             'total_rounds' => 'required|integer|min:1',
             'move_cost' => 'required|integer|min:1',
+            'extra_moves_cost' => 'required|integer|min:1',
+            'ideal_crane_split' => 'required|integer|min:1',
             'cards_limit_per_round' => 'required|integer|min:1',
             'cards_must_process_per_round' => 'required|integer|min:1',
             'swap_config' => 'required|nullable|array'
@@ -60,6 +62,8 @@ class RoomController extends Controller
                 'bay_types' => json_encode($layout->bay_types),
                 'total_rounds' => $validated['total_rounds'],
                 'move_cost' => $validated['move_cost'],
+                'extra_moves_cost' => $validated['extra_moves_cost'],
+                'ideal_crane_split' => $validated['ideal_crane_split'],
                 'cards_limit_per_round' => $validated['cards_limit_per_round'],
                 'cards_must_process_per_round' => $validated['cards_must_process_per_round'],
                 'swap_config' => json_encode($validated['swap_config'] ?? [])
@@ -125,6 +129,8 @@ class RoomController extends Controller
             'total_rounds' => 'integer|min:1',
             'cards_limit_per_round' => 'integer|min:1',
             'move_cost' => 'integer|min:1',
+            'extra_moves_cost' => 'integer|min:1',
+            'ideal_crane_split' => 'integer|min:1',
             'assigned_users' => 'array',
             'assigned_users.*' => 'exists:users,id',
             'deck' => 'exists:decks,id',
@@ -137,6 +143,8 @@ class RoomController extends Controller
         if (isset($validated['cards_limit_per_round'])) $room->cards_limit_per_round = $validated['cards_limit_per_round'];
         if (isset($validated['cards_must_process_per_round'])) $room->cards_must_process_per_round = $validated['cards_must_process_per_round'];
         if (isset($validated['move_cost'])) $room->move_cost = $validated['move_cost'];
+        if (isset($validated['extra_moves_cost'])) $room->extra_moves_cost = $validated['extra_moves_cost'];
+        if (isset($validated['ideal_crane_split'])) $room->ideal_crane_split = $validated['ideal_crane_split'];
 
         if (isset($validated['assigned_users'])) {
             $room->assigned_users = json_encode($validated['assigned_users']);
@@ -876,22 +884,40 @@ class RoomController extends Controller
 
     public function getUsersRanking($roomId)
     {
-        $room = Room::findOrFail($roomId);
-        $userIds = json_decode($room->users, true);
+        try {
+            $shipBays = ShipBay::where('room_id', $roomId)->get();
+            $rankings = [];
 
-        $shipBays = ShipBay::with('user:id,name')
-            ->whereIn('user_id', $userIds)
-            ->where('room_id', $roomId)
-            ->distinct('user_id')
-            ->get()
-            ->map(function ($shipBay) {
-                $shipBay->total_revenue = $shipBay->revenue - $shipBay->penalty;
-                return $shipBay;
+            foreach ($shipBays as $shipBay) {
+                $user = User::find($shipBay->user_id);
+                if (!$user) continue;
+
+                $rankings[] = [
+                    'user_id' => $shipBay->user_id,
+                    'user_name' => $user->name,
+                    'port' => $shipBay->port,
+                    'revenue' => $shipBay->revenue,
+                    'penalty' => $shipBay->penalty,
+                    'extra_moves_penalty' => $shipBay->extra_moves_penalty,
+                    'total_revenue' => $shipBay->total_revenue,
+                    'discharge_moves' => $shipBay->discharge_moves,
+                    'load_moves' => $shipBay->load_moves,
+                    'accepted_cards' => $shipBay->accepted_cards,
+                    'rejected_cards' => $shipBay->rejected_cards,
+                    'long_crane_moves' => $shipBay->long_crane_moves,
+                    'extra_moves_on_long_crane' => $shipBay->extra_moves_on_long_crane
+                ];
+            }
+
+            // Sort rankings by total_revenue in descending order
+            usort($rankings, function ($a, $b) {
+                return $b['total_revenue'] <=> $a['total_revenue'];
             });
 
-        $ranking = $shipBays->sortByDesc('total_revenue')->values();
-
-        return response()->json($ranking);
+            return response()->json($rankings);
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Failed to retrieve rankings'], 500);
+        }
     }
 
     public function getAvailableUsers()

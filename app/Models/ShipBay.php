@@ -17,6 +17,7 @@ class ShipBay extends Model
         'revenue',
         'section',
         'penalty',
+        'extra_moves_penalty',
         'discharge_moves',
         'load_moves',
         'processed_cards',

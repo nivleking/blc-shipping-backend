@@ -28,6 +28,8 @@ class Room extends Model
         'bay_types',
         'total_rounds',
         'move_cost',
+        'extra_moves_cost',
+        'ideal_crane_split',
         'cards_limit_per_round',
         'cards_must_process_per_round',
         'swap_config'

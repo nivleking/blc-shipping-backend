@@ -108,17 +108,15 @@ class ShipBayController extends Controller
 
         $room = Room::find($roomId);
         $moveCost = $room->move_cost;
-        $penalty = $validatedData['count'] * $moveCost;
-        $shipBay->increment('penalty', $penalty);
 
-        // Update total_revenue
-        $shipBay->total_revenue = $shipBay->revenue - $shipBay->penalty;
+        // Calculate direct move penalty
+        $movePenalty = $validatedData['count'] * $moveCost;
 
         // Increment move counter
         if ($validatedData['move_type'] === 'discharge') {
-            $shipBay->increment('discharge_moves', $validatedData['count']);
+            $shipBay->discharge_moves += $validatedData['count'];
         } else {
-            $shipBay->increment('load_moves', $validatedData['count']);
+            $shipBay->load_moves += $validatedData['count'];
         }
 
         // Also track bay-specific moves
@@ -136,11 +134,73 @@ class ShipBayController extends Controller
             $bayMoves[$validatedData['bay_index']]['load_moves'] += $validatedData['count'];
         }
 
-        $shipBay->bay_moves = json_encode($bayMoves);
-        $shipBay->save();
+        // Calculate total moves per bay
+        foreach ($bayMoves as $index => $moves) {
+            $bayMoves[$index]['total_moves'] =
+                ($moves['discharge_moves'] ?? 0) + ($moves['load_moves'] ?? 0);
+        }
 
-        // Recalculate bay pairs after move
-        $this->recalculateBayPairs($shipBay);
+        // Update bay moves in ship bay
+        $shipBay->bay_moves = json_encode($bayMoves);
+
+        // Calculate bay pairs and extra moves
+        $bayCount = $room->bay_count;
+        $totalMoves = $shipBay->discharge_moves + $shipBay->load_moves;
+        $idealCraneSplit = $room->ideal_crane_split ?? 2;
+        $idealMovesPerCrane = $idealCraneSplit > 0 ? $totalMoves / $idealCraneSplit : 0;
+
+        // Create bay pairs
+        $bayPairs = [];
+
+        // First bay is its own pair
+        $bayPairs[] = [
+            'bays' => [0],
+            'total_moves' => $bayMoves[0]['total_moves'] ?? 0
+        ];
+
+        // Process remaining bays in pairs
+        for ($i = 1; $i < $bayCount; $i += 2) {
+            if ($i + 1 < $bayCount) {
+                // Regular pair
+                $bayPairs[] = [
+                    'bays' => [$i, $i + 1],
+                    'total_moves' => ($bayMoves[$i]['total_moves'] ?? 0) +
+                        ($bayMoves[$i + 1]['total_moves'] ?? 0)
+                ];
+            } else {
+                // Last bay forms its own pair
+                $bayPairs[] = [
+                    'bays' => [$i],
+                    'total_moves' => $bayMoves[$i]['total_moves'] ?? 0
+                ];
+            }
+        }
+
+        // Find the bay pair with the most moves (long crane)
+        $longCraneMoves = 0;
+        foreach ($bayPairs as $pair) {
+            if ($pair['total_moves'] > $longCraneMoves) {
+                $longCraneMoves = $pair['total_moves'];
+            }
+        }
+
+        // Calculate extra moves on long crane
+        $extraMovesOnLongCrane = max(0, $longCraneMoves - $idealMovesPerCrane);
+        $extraMovesPenalty = round($extraMovesOnLongCrane) * $room->extra_moves_cost;
+
+        // Update ship bay with all calculated values
+        $shipBay->bay_pairs = json_encode($bayPairs);
+        $shipBay->long_crane_moves = $longCraneMoves;
+        $shipBay->extra_moves_on_long_crane = round($extraMovesOnLongCrane);
+
+        // Update penalties
+        $shipBay->penalty += $movePenalty; // Add the new move penalty
+        $shipBay->extra_moves_penalty = $extraMovesPenalty; // Replace with current calculation
+
+        // Calculate final revenue
+        $shipBay->total_revenue = $shipBay->revenue - $shipBay->penalty - $shipBay->extra_moves_penalty;
+
+        $shipBay->save();
 
         return response()->json($shipBay);
     }

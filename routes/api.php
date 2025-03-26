@@ -179,12 +179,10 @@ Route::get('simulation-logs/{simulationLog}', [SimulationLogController::class, '
 Route::delete('simulation-logs/{simulationLog}', [SimulationLogController::class, 'destroy'])->middleware('auth:sanctum', 'admin');
 Route::get('simulation-logs/{roomId}/{userId}', [SimulationLogController::class, 'getByRoomAndUser']);
 
-// Capacity Uptake Routes
-Route::get('/capacity-uptake/weeks/{roomId}/{userId}', [CapacityUptakeController::class, 'getWeeksByRoomUser']);
-Route::get('/capacity-uptake/{roomId}/{userId}/{week}', [CapacityUptakeController::class, 'getByRoomUserWeek']);
-Route::post('/capacity-uptake', [CapacityUptakeController::class, 'saveOrUpdate']);
-
 // Weekly Performance Routes
-Route::get('/rooms/{roomId}/weekly-performance/{userId}', [WeeklyPerformanceController::class, 'getWeeklyPerformance']);
-Route::post('/rooms/{roomId}/weekly-performance/{userId}', [WeeklyPerformanceController::class, 'storeWeeklyPerformance']);
-Route::put('/rooms/{roomId}/weekly-performance/{userId}/{weekNumber}', [WeeklyPerformanceController::class, 'updateWeek']);
+Route::get('/rooms/{roomId}/users/{userId}/weekly-performance/{week?}', [WeeklyPerformanceController::class, 'getWeeklyPerformance']);
+Route::post('/rooms/{roomId}/users/{userId}/weekly-performance/{week}', [WeeklyPerformanceController::class, 'updateWeeklyPerformance']);
+
+// Capacity Uptake Routes
+Route::get('/capacity-uptakes/{roomId}/{userId}/{week?}', [CapacityUptakeController::class, 'getCapacityUptake']);
+Route::post('/capacity-uptakes/{roomId}/{userId}/{week}', [CapacityUptakeController::class, 'updateCapacityUptake']);

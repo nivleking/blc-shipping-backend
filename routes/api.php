@@ -103,6 +103,7 @@ Route::post('generate-cards/{deck}', [CardController::class, 'generate']);
 // Admin - Container Routes
 // Route::apiResource('containers', ContainerController::class);
 Route::get('containers', [ContainerController::class, 'index']);
+Route::post('/containers/destinations', [ContainerController::class, 'getContainerDestinations']);
 // Route::post('containers', [ContainerController::class, 'store']);
 Route::get('containers/{container}', [ContainerController::class, 'show']);
 // Route::put('containers/{container}', [ContainerController::class, 'update']);

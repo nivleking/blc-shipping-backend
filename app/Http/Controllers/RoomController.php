@@ -207,7 +207,6 @@ class RoomController extends Controller
             ]);
         } catch (Exception $e) {
             DB::rollBack();
-            Log::error('Error deleting room: ' . $e->getMessage());
 
             return response()->json([
                 'message' => 'Failed to delete room',
@@ -361,8 +360,6 @@ class RoomController extends Controller
         $swapMap = $request->swapMap;
         $userIds = json_decode($room->users, true);
 
-        Log::info('Received swap map:', $swapMap);
-
         // Validation checks
         $origins = array_keys($swapMap);
         $destinations = array_values($swapMap);
@@ -400,8 +397,6 @@ class RoomController extends Controller
                 $originalArenas[$bay->port] = $bay->arena;
             }
 
-            Log::info('Original arenas:', $originalArenas);
-
             // Perform the swaps
             foreach ($swapMap as $fromPort => $toPort) {
                 if (isset($baysByPort[$fromPort]) && isset($originalArenas[$toPort])) {
@@ -409,9 +404,7 @@ class RoomController extends Controller
                     $sourceBay->arena = $originalArenas[$toPort];
                     $sourceBay->save();
 
-                    Log::info("Swapped bay {$fromPort} -> {$toPort}");
                 } else {
-                    Log::warning("Missing bay data for ports: {$fromPort} -> {$toPort}");
                 }
             }
 
@@ -426,7 +419,6 @@ class RoomController extends Controller
                 'message' => 'Bays swapped successfully',
             ]);
         } catch (Exception $e) {
-            Log::error('Bay swap error: ' . $e->getMessage());
             return response()->json([
                 'message' => 'Failed to swap bays',
                 'error' => $e->getMessage()
@@ -475,9 +467,9 @@ class RoomController extends Controller
         $bayTypes = json_decode($room->bay_types, true);
 
         // Default values if not set
-        if (!$baySize) $baySize = ['rows' => 4, 'columns' => 5];
-        if (!$bayCount) $bayCount = 3;
-        if (!$bayTypes) $bayTypes = ['dry', 'dry', 'reefer'];
+        // if (!$baySize) $baySize = ['rows' => 4, 'columns' => 5];
+        // if (!$bayCount) $bayCount = 3;
+        // if (!$bayTypes) $bayTypes = ['dry', 'dry', 'reefer'];
 
         foreach ($ports as $userId => $port) {
             $user = User::find($userId);
@@ -542,7 +534,6 @@ class RoomController extends Controller
         // Get room and deck information
         $room = Room::find(request()->route('room')->id);
         if (!$room) {
-            Log::warning("Room not found for user port: $userPort");
             return $arena;
         }
 
@@ -694,14 +685,12 @@ class RoomController extends Controller
                 $arena[$bay][$row][$col] = $container->id;
                 $placedCounts[$destinationPort]++;
             } catch (\Exception $e) {
-                Log::error("Failed to create container: " . $e->getMessage());
                 continue;
             }
         }
 
         // Log the counts we achieved
         foreach ($placedCounts as $port => $count) {
-            Log::info("Port $port: Placed $count containers (target: $containersPerPort)");
         }
 
         return $arena;
@@ -767,7 +756,6 @@ class RoomController extends Controller
                 'destination' => $destinationPort, // informasi tujuan ditambahkan
             ];
         } catch (\Exception $e) {
-            Log::error("Failed to create container: " . $e->getMessage());
             return null;
         }
     }

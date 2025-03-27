@@ -46,4 +46,39 @@ class ContainerController extends Controller
     {
         //
     }
+
+    public function getContainerDestinations(Request $request)
+    {
+        $request->validate([
+            'containerIds' => 'required|array',
+            'containerIds.*' => 'exists:containers,id'
+        ]);
+
+        $containerDestinations = [];
+        $containers = Container::whereIn('id', $request->containerIds)
+            ->with('card:id,destination')
+            ->get(['id', 'card_id']);
+
+        foreach ($containers as $container) {
+            if ($container->card) {
+                $containerDestinations[$container->id] = $container->card->destination;
+            }
+        }
+
+        return response()->json($containerDestinations);
+    }
+
+    // public function getBatch(Request $request)
+    // {
+    //     $request->validate([
+    //         'containerIds' => 'required|array',
+    //         'containerIds.*' => 'exists:containers,id'
+    //     ]);
+
+    //     $containers = Container::whereIn('id', $request->containerIds)
+    //         ->with('card:id,destination,type,priority,origin,quantity')
+    //         ->get();
+
+    //     return response()->json($containers);
+    // }
 }

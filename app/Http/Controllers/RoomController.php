@@ -19,8 +19,25 @@ class RoomController extends Controller
 {
     public function index()
     {
-        $rooms = Room::all();
-        return response()->json($rooms);
+        $rooms = Room::with(['admin', 'deck', 'shipLayout'])->get();
+
+        $admins = User::where('is_admin', true)->get()->keyBy('id');
+
+        $decks = Deck::all();
+        $layouts = ShipLayout::all();
+
+        $availableUsers = User::where('is_admin', false)
+            ->where('status', 'active')
+            ->select('id', 'name')
+            ->get();
+
+        return response()->json([
+            'rooms' => $rooms,
+            'admins' => $admins,
+            'decks' => $decks,
+            'layouts' => $layouts,
+            'availableUsers' => $availableUsers
+        ]);
     }
 
     public function store(Request $request)
@@ -403,7 +420,6 @@ class RoomController extends Controller
                     $sourceBay = $baysByPort[$fromPort];
                     $sourceBay->arena = $originalArenas[$toPort];
                     $sourceBay->save();
-
                 } else {
                 }
             }

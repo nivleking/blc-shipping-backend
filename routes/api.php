@@ -79,14 +79,12 @@ Route::delete('decks/{deck}/cards', [DeckController::class, 'removeAllCards']);
 Route::post('decks/{deck}/import-cards', [CardController::class, 'importFromExcel']);
 
 // Market Intelligence Routes
-Route::get('/decks/{deck}/market-intelligence', [MarketIntelligenceController::class, 'index']);
-Route::get('/decks/{deck}/market-intelligence/active', [MarketIntelligenceController::class, 'getActive']);
-Route::post('/decks/{deck}/market-intelligence', [MarketIntelligenceController::class, 'store']);
-Route::post('/decks/{deck}/market-intelligence/generate-default', [MarketIntelligenceController::class, 'generateDefault']);
-Route::get('/decks/{deck}/market-intelligence/exists', [MarketIntelligenceController::class, 'exists']);
-Route::get('/market-intelligence/{marketIntelligence}', [MarketIntelligenceController::class, 'show']);
-Route::put('/market-intelligence/{marketIntelligence}', [MarketIntelligenceController::class, 'update']);
-Route::delete('/market-intelligence/{marketIntelligence}', [MarketIntelligenceController::class, 'destroy']);
+Route::prefix('market-intelligence')->group(function () {
+    Route::get('/deck/{deck}', [MarketIntelligenceController::class, 'forDeck']);
+    Route::post('/deck/{deck}', [MarketIntelligenceController::class, 'storeOrUpdate']);
+    Route::post('/deck/{deck}/generate-default', [MarketIntelligenceController::class, 'generateDefault']);
+    Route::delete('/{marketIntelligence}', [MarketIntelligenceController::class, 'destroy']);
+});
 
 // Admin - Card Routes
 Route::get('cards', [CardController::class, 'index']);

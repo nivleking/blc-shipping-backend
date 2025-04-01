@@ -248,68 +248,57 @@ class UserController extends Controller
         return response()->json("Deleted", 204);
     }
 
-    public function getAllUsers()
+    public function getUsers(Request $request)
     {
-        $users = User::where('is_admin', false)
-            ->with(['creator', 'editor'])
-            ->latest()
-            ->get()
-            ->map(function ($user) {
-                return [
-                    'id' => $user->id,
-                    'name' => $user->name,
-                    'status' => $user->status,
-                    'created_at' => $user->created_at,
-                    'updated_at' => $user->updated_at,
-                    'created_by' => $user->creator ? [
-                        'id' => $user->creator->id,
-                        'name' => $user->creator->name
-                    ] : null,
-                    'updated_by' => $user->editor ? [
-                        'id' => $user->editor->id,
-                        'name' => $user->editor->name
-                    ] : null,
-                    'last_login_at' => $user->last_login_at,
-                    'last_login_ip' => $user->last_login_ip,
-                    'login_count' => $user->login_count,
-                    'password_plain' => $user->password_plain
-                ];
-            });
+        $isAdmin = $request->query('is_admin', null);
+
+        if ($isAdmin !== null) {
+            $isAdmin = filter_var($isAdmin, FILTER_VALIDATE_BOOLEAN);
+        }
+
+        $query = User::query()->with(['creator', 'editor'])->latest();
+
+        if ($isAdmin !== null) {
+            $query->where('is_admin', $isAdmin);
+        }
+
+        $users = $query->get()->map(function ($user) {
+            return [
+                'id' => $user->id,
+                'name' => $user->name,
+                'is_admin' => $user->is_admin,
+                'is_super_admin' => $user->is_super_admin,
+                'status' => $user->status,
+                'created_at' => $user->created_at,
+                'updated_at' => $user->updated_at,
+                'created_by' => $user->creator ? [
+                    'id' => $user->creator->id,
+                    'name' => $user->creator->name
+                ] : null,
+                'updated_by' => $user->editor ? [
+                    'id' => $user->editor->id,
+                    'name' => $user->editor->name
+                ] : null,
+                'last_login_at' => $user->last_login_at,
+                'last_login_ip' => $user->last_login_ip,
+                'login_count' => $user->login_count,
+                'password_plain' => $user->password_plain
+            ];
+        });
 
         return response()->json($users);
     }
 
-    public function getAllAdmins()
+    public function getAllUsers(Request $request)
     {
-        $admins = User::where('is_admin', true)
-            ->with(['creator', 'editor'])
-            ->latest()
-            ->get()
-            ->map(function ($admin) {
-                return [
-                    'id' => $admin->id,
-                    'name' => $admin->name,
-                    'is_admin' => $admin->is_admin,
-                    'is_super_admin' => $admin->is_super_admin,
-                    'status' => $admin->status,
-                    'created_at' => $admin->created_at,
-                    'updated_at' => $admin->updated_at,
-                    'created_by' => $admin->creator ? [
-                        'id' => $admin->creator->id,
-                        'name' => $admin->creator->name
-                    ] : null,
-                    'updated_by' => $admin->editor ? [
-                        'id' => $admin->editor->id,
-                        'name' => $admin->editor->name
-                    ] : null,
-                    'last_login_at' => $admin->last_login_at,
-                    'last_login_ip' => $admin->last_login_ip,
-                    'login_count' => $admin->login_count,
-                    'password_plain' => $admin->password_plain
-                ];
-            });
+        $request->query->set('is_admin', false);
+        return $this->getUsers($request);
+    }
 
-        return response()->json($admins);
+    public function getAllAdmins(Request $request)
+    {
+        $request->query->set('is_admin', true);
+        return $this->getUsers($request);
     }
 
     public function showPassword(Request $request, User $user)

@@ -40,12 +40,9 @@ Route::get('/clear-cache', function () {
     return "Cache is cleared";
 });
 
+Route::get('users', [UserController::class, 'getUsers']);
 Route::get('all-users', [UserController::class, 'getAllUsers']);
 Route::get('all-admins', [UserController::class, 'getAllAdmins']);
-
-Route::get('moveDragMe', function () {
-    return response()->json(['message' => 'Drag me to the right place!']);
-});
 
 // Token
 Route::post('users/login', [UserController::class, 'login']);
@@ -74,7 +71,7 @@ Route::post('decks', [DeckController::class, 'store']);
 Route::get('decks/{deck}', [DeckController::class, 'show']);
 Route::put('decks/{deck}', [DeckController::class, 'update']);
 Route::delete('decks/{deck}', [DeckController::class, 'destroy']);
-Route::get('decks/{deck}/cards', [DeckController::class, 'showByDeck']);
+// Route::get('decks/{deck}/cards', [DeckController::class, 'showByDeck']);
 Route::get('decks/{deck}/origins', [DeckController::class, 'getOrigins']);
 Route::post('decks/{deck}/add-card', [DeckController::class, 'addCard']);
 Route::delete('decks/{deck}/remove-card/{salesCallCard}', [DeckController::class, 'removeCard']);

@@ -3,15 +3,41 @@
 namespace App\Http\Controllers;
 
 use App\Models\Card;
+use App\Models\Container;
 use App\Models\Deck;
 use App\Models\SalesCallCard;
 use Illuminate\Http\Request;
 
 class DeckController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        $decks = Deck::all();
+        $includeCards = $request->query('include_cards', false);
+
+        $decks = Deck::with('cards')->get();
+
+        $decks = $decks->map(function ($deck) use ($includeCards) {
+            $cards = $deck->cards;
+            $stats = [
+                'totalCards' => $cards->count(),
+                'totalPorts' => $cards->pluck('origin')->unique()->count(),
+                'dryContainers' => $cards->where('type', 'dry')->count(),
+                'reeferContainers' => $cards->where('type', 'reefer')->count(),
+                'commitedCards' => $cards->where('priority', 'Committed')->count(),
+                'nonCommitedCards' => $cards->where('priority', 'Non-Committed')->count(),
+            ];
+
+            $deckData = $deck->toArray();
+
+            if (!$includeCards) {
+                unset($deckData['cards']);
+            }
+
+            $deckData['stats'] = $stats;
+
+            return $deckData;
+        });
+
         return response()->json($decks);
     }
 
@@ -25,9 +51,24 @@ class DeckController extends Controller
         return response()->json($deck, 201);
     }
 
-    public function show(Deck $deck)
+    public function show(Request $request, Deck $deck)
     {
-        return response()->json($deck->load('cards'), 200);
+        $includeContainers = $request->query('include_containers', false);
+        // Always load the deck with its cards
+        $deck->load('cards');
+
+        if ($includeContainers) {
+            $cardIds = $deck->cards->pluck('id')->toArray();
+
+            $containers = Container::whereIn('card_id', $cardIds)->get();
+
+            return response()->json([
+                'deck' => $deck,
+                'containers' => $containers
+            ], 200);
+        }
+
+        return response()->json($deck, 200);
     }
 
     public function update(Request $request, Deck $deck)

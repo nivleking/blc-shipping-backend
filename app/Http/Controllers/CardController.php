@@ -28,12 +28,12 @@ class CardController extends Controller
         ]);
 
         $numericId = intval($validated['id']);
-        if ($numericId < 1 || $numericId > 99999) {
-            return response()->json([
-                'message' => 'ID must be a number between 1 and 99999',
-                'errors' => ['id' => ['Invalid ID range']]
-            ], 422);
-        }
+        // if ($numericId < 1 || $numericId > 99999) {
+        //     return response()->json([
+        //         'message' => 'ID must be a number between 1 and 99999',
+        //         'errors' => ['id' => ['Invalid ID range']]
+        //     ], 422);
+        // }
 
         if (Card::where('id', $validated['id'])->exists()) {
             if (isset($validated['mode']) && $validated['mode'] == "auto_generate") {
@@ -160,7 +160,7 @@ class CardController extends Controller
         $ports = $this->getPorts($validated['ports']);
 
         if ($useMarketIntelligence) {
-            $marketIntelligence = $deck->activeMarketIntelligence();
+            $marketIntelligence = $deck->marketIntelligence();
 
             if ($marketIntelligence && !empty($marketIntelligence->price_data)) {
                 $basePriceMap = $marketIntelligence->price_data;

@@ -239,7 +239,7 @@ class RoomController extends Controller
 
         if (!in_array($user->id, $assignedUsers)) {
             return response()->json([
-                'message' => 'You are not authorized to join this room'
+                'message' => 'You are not assigned to this room'
             ], 403);
         }
 
@@ -248,8 +248,9 @@ class RoomController extends Controller
         // Check if user is already in the room
         if (in_array($user->id, $users)) {
             return response()->json([
-                'message' => 'You are already in this room'
-            ], 400);
+                'room' => $room,
+                'simulation_started' => ($room->status === 'active')
+            ]);
         }
 
         // Check if room is full
@@ -263,7 +264,10 @@ class RoomController extends Controller
         $room->users = json_encode($users);
         $room->save();
 
-        return response()->json($room);
+        return response()->json([
+            'room' => $room,
+            'simulation_started' => ($room->status === 'active')
+        ]);
     }
 
     public function leaveRoom(Request $request, Room $room)
@@ -477,22 +481,15 @@ class RoomController extends Controller
 
         $shipBays = [];
 
-        // Get room configuration for bay setup
         $baySize = json_decode($room->bay_size, true);
         $bayCount = $room->bay_count;
         $bayTypes = json_decode($room->bay_types, true);
-
-        // Default values if not set
-        // if (!$baySize) $baySize = ['rows' => 4, 'columns' => 5];
-        // if (!$bayCount) $bayCount = 3;
-        // if (!$bayTypes) $bayTypes = ['dry', 'dry', 'reefer'];
 
         foreach ($ports as $userId => $port) {
             $user = User::find($userId);
 
             if ($user) {
-                // Create empty arena
-                $arena = array_fill(
+                $emptyArena = array_fill(
                     0,
                     $bayCount,
                     array_fill(
@@ -502,17 +499,15 @@ class RoomController extends Controller
                     )
                 );
 
-                // Populate with initial containers
-                $arena = $this->generateInitialContainers($arena, $port, $ports, $bayTypes);
+                $flatArena = $this->generateInitialContainers($emptyArena, $port, $ports, $bayTypes);
 
-                // Create or update ShipBay
                 $shipBay = ShipBay::updateOrCreate(
                     ['user_id' => $user->id, 'room_id' => $room->id],
                     [
                         'port' => $port,
-                        'arena' => json_encode($arena),
+                        'arena' => json_encode($flatArena),
                         'revenue' => 0,
-                        'section' => 'section1',
+                        'section' => 'section2',
                         'penalty' => 0,
                         'discharge_moves' => 0,
                         'load_moves' => 0,
@@ -545,12 +540,18 @@ class RoomController extends Controller
         $colCount = count($arena[0][0]);
         $bottomRowIndex = $rowCount - 1;
 
+        // Initialize flat container format
+        $flatArena = [
+            'containers' => [],
+            'totalContainers' => 0
+        ];
+
         $containersPerPort = 5;
 
         // Get room and deck information
         $room = Room::find(request()->route('room')->id);
         if (!$room) {
-            return $arena;
+            return $flatArena;
         }
 
         // Get valid ports from deck
@@ -565,33 +566,8 @@ class RoomController extends Controller
             });
         }
 
-        // // Add fallback ports if needed
-        // if (count($validPorts) < 3) {
-        //     $validPorts = array_merge($validPorts, array_values($allPorts));
-        //     $validPorts = array_unique($validPorts);
-        //     if (count($validPorts) < 3) {
-        //         $defaultPorts = ['SBY', 'MKS', 'MDN', 'JYP', 'BPN', 'BKS'];
-        //         foreach ($defaultPorts as $port) {
-        //             if (!in_array($port, $validPorts)) {
-        //                 $validPorts[] = $port;
-        //             }
-        //         }
-        //     }
-        // }
-
         // Create a list of ports excluding user's port
         $otherPorts = array_values(array_diff($validPorts, [$userPort]));
-
-        // // If we don't have enough ports, add some default ones
-        // while (count($otherPorts) < 3) {
-        //     $defaultPorts = ['SBY', 'MKS', 'MDN', 'JYP', 'BPN', 'BKS'];
-        //     foreach ($defaultPorts as $port) {
-        //         if (!in_array($port, $otherPorts) && $port !== $userPort) {
-        //             $otherPorts[] = $port;
-        //             break;
-        //         }
-        //     }
-        // }
 
         // Limit to 4 ports max (including user port)
         if (count($otherPorts) > 3) {
@@ -625,7 +601,7 @@ class RoomController extends Controller
             }
         }
 
-        // Shuffle bottom positions
+        // Shuffle bottom positions to randomize placement
         shuffle($bottomPositions);
 
         // Step 1: Place containers in the bottom row first
@@ -660,8 +636,19 @@ class RoomController extends Controller
             $row = $position['row'];
             $col = $position['col'];
 
-            // Skip if position already has a container
-            if ($arena[$bay][$row][$col] !== null) {
+            // Calculate position index for flat format
+            $positionIndex = $bay * $rowCount * $colCount + $row * $colCount + $col;
+
+            // Check if position is already occupied in our flat structure
+            $positionOccupied = false;
+            foreach ($flatArena['containers'] as $container) {
+                if ($container['position'] === $positionIndex) {
+                    $positionOccupied = true;
+                    break;
+                }
+            }
+
+            if ($positionOccupied) {
                 continue;
             }
 
@@ -670,7 +657,7 @@ class RoomController extends Controller
             $isForUserPort = $destinationPort === $userPort;
             $originPort = $isForUserPort ? $otherPorts[array_rand($otherPorts)] : $userPort;
 
-            // Determine container type
+            // Determine container type based on bay type
             $bayType = $bayTypes[$bay] ?? 'dry';
             $containerType = $bayType === 'reefer' ? 'reefer' : 'dry';
 
@@ -680,6 +667,7 @@ class RoomController extends Controller
             $priority = rand(1, 10) <= 5 ? "Committed" : "Non-Committed";
 
             try {
+                // Create card record
                 $card = Card::create([
                     'id' => $cardId,
                     'type' => $containerType,
@@ -692,24 +680,35 @@ class RoomController extends Controller
                     'generated_for_room_id' => $room->id
                 ]);
 
+                // Create container record
                 $container = Container::create([
                     'color' => $this->generateContainerColor($destinationPort),
                     'card_id' => $cardId,
                     'type' => $containerType
                 ]);
 
-                $arena[$bay][$row][$col] = $container->id;
+                // Add container to flat arena structure
+                $flatArena['containers'][] = [
+                    'id' => $container->id,
+                    'position' => $positionIndex,
+                    'bay' => $bay,
+                    'row' => $row,
+                    'col' => $col,
+                    'cardId' => $cardId,
+                    'type' => $containerType,
+                    'origin' => $originPort,
+                    'destination' => $destinationPort
+                ];
+
+                $flatArena['totalContainers']++;
                 $placedCounts[$destinationPort]++;
             } catch (\Exception $e) {
+                // Log error or handle exception
                 continue;
             }
         }
 
-        // Log the counts we achieved
-        foreach ($placedCounts as $port => $count) {
-        }
-
-        return $arena;
+        return $flatArena;
     }
 
     private function createContainer($bay, $row, $col, $bayTypes, $userPort, $validPorts, $nextId, $bottomRowIndex)

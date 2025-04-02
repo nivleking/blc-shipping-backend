@@ -17,30 +17,100 @@ class ShipBayController extends Controller
     public function store(Request $request)
     {
         $validatedData = $request->validate([
+            'arena' => 'required',
             'user_id' => 'required|exists:users,id',
             'room_id' => 'required|exists:rooms,id',
-            'arena' => 'required|array',
-            'revenue' => 'required|numeric|min:0',
             'section' => 'sometimes|string|in:section1,section2',
+            'revenue' => 'sometimes|numeric'
         ]);
+
+        $room = Room::find($validatedData['room_id']);
 
         $shipBay = ShipBay::where('user_id', $validatedData['user_id'])
             ->where('room_id', $validatedData['room_id'])
             ->first();
 
         if (!$shipBay) {
+            if (!$room) {
+                return response()->json(['message' => 'Room not found'], 404);
+            }
+
+            // Get user's port
+            $userPort = ShipBay::where('user_id', $validatedData['user_id'])
+                ->where('room_id', $validatedData['room_id'])
+                ->value('port');
+
+            // Create new ship bay
             $shipBay = new ShipBay();
             $shipBay->user_id = $validatedData['user_id'];
             $shipBay->room_id = $validatedData['room_id'];
+            $shipBay->port = $userPort ?? '';
         }
 
-        $shipBay->arena = json_encode($validatedData['arena']);
-        $shipBay->revenue = $validatedData['revenue'];
-        $shipBay->section = $validatedData['section'] ?? 'section1';
-        $shipBay->total_revenue = $validatedData['revenue'] - $shipBay->penalty; // Calculate total_revenue
+        // Convert arena data to the new flat format
+        $baySize = json_decode($room->bay_size, true);
+        $arenaData = $this->convertArenaToStorageFormat(
+            $validatedData['arena'],
+            $room->bay_count,
+            $baySize
+        );
+
+        $shipBay->arena = json_encode($arenaData);
+        $shipBay->revenue = $validatedData['revenue'] ?? $shipBay->revenue ?? 0;
+        $shipBay->section = $validatedData['section'] ?? $shipBay->section ?? 'section1';
+        $shipBay->total_revenue = ($shipBay->revenue ?? 0) - ($shipBay->penalty ?? 0);
         $shipBay->save();
 
         return response()->json($shipBay, 201);
+    }
+
+    /**
+     * Convert bay arena data from 2D array to flat storage format
+     */
+    private function convertArenaToStorageFormat($arenaInput, $bayCount, $baySize)
+    {
+        // If already in our flat format, return as is
+        if (isset($arenaInput['containers'])) {
+            return $arenaInput;
+        }
+
+        // Convert 2D array to flat format
+        $containers = [];
+        $totalContainers = 0;
+
+        // Process each bay in the arena
+        for ($bayIndex = 0; $bayIndex < $bayCount; $bayIndex++) {
+            if (!isset($arenaInput[$bayIndex])) continue;
+
+            $bayData = $arenaInput[$bayIndex];
+
+            // Process each cell in the bay
+            for ($rowIndex = 0; $rowIndex < $baySize['rows']; $rowIndex++) {
+                for ($colIndex = 0; $colIndex < $baySize['columns']; $colIndex++) {
+                    // Calculate position using the formula: (bayIndex * totalCellsPerBay) + (rowIndex * columns) + colIndex
+                    $position = ($bayIndex * $baySize['rows'] * $baySize['columns']) + ($rowIndex * $baySize['columns']) + $colIndex;
+
+                    // Get the container at this position
+                    $container = $bayData[$rowIndex][$colIndex] ?? null;
+
+                    if ($container) {
+                        $containers[] = [
+                            'id' => $container,
+                            'position' => $position,
+                            'bay' => $bayIndex,
+                            'row' => $rowIndex,
+                            'col' => $colIndex
+                        ];
+                        $totalContainers++;
+                    }
+                }
+            }
+        }
+
+        return [
+            'containers' => $containers,
+            'totalContainers' => $totalContainers
+        ];
     }
 
     // Add method to update section
@@ -86,6 +156,23 @@ class ShipBayController extends Controller
         if (!$shipBay) {
             return response()->json(['message' => 'Ship bay not found'], 404);
         }
+
+        $arenaData = json_decode($shipBay->arena, true);
+
+        if (!isset($arenaData['containers'])) {
+            $roomData = Room::find($room);
+            $baySize = json_decode($roomData->bay_size, true);
+            $arenaData = $this->convertArenaToStorageFormat(
+                $arenaData,
+                $roomData->bay_count,
+                $baySize
+            );
+
+            $shipBay->arena = json_encode($arenaData);
+            $shipBay->save();
+        }
+
+        $shipBay->arena = $arenaData;
 
         return response()->json($shipBay, 200);
     }

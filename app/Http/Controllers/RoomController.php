@@ -353,8 +353,8 @@ class RoomController extends Controller
         // Perform the swaps according to the configuration
         foreach ($swapConfig as $fromPort => $toPort) {
             if (isset($baysByPort[$fromPort]) && isset($originalArenas[$toPort])) {
-                $sourceBay = $baysByPort[$fromPort];
-                $sourceBay->arena = $originalArenas[$toPort];
+                $sourceBay = $baysByPort[$toPort];
+                $sourceBay->arena = $originalArenas[$fromPort];
                 $sourceBay->save();
             }
         }
@@ -546,36 +546,51 @@ class RoomController extends Controller
             'totalContainers' => 0
         ];
 
-        $containersPerPort = 5;
+        $targetContainers = 18;
 
-        // Get room and deck information
+        // Get room information
         $room = Room::find(request()->route('room')->id);
         if (!$room) {
             return $flatArena;
         }
 
-        // Get valid ports from deck
-        $validPorts = [];
-        $deck = Deck::find($room->deck_id);
-        if ($deck) {
-            $originPorts = $deck->cards()->distinct('origin')->pluck('origin')->toArray();
-            $destPorts = $deck->cards()->distinct('destination')->pluck('destination')->toArray();
-            $validPorts = array_values(array_unique(array_merge($originPorts, $destPorts)));
-            $validPorts = array_filter($validPorts, function ($port) {
-                return !empty($port);
-            });
+        $swapConfig = json_decode($room->swap_config, true) ?? [];
+
+        // Remove user's own port from destination options
+        $destinationPorts = array_values(array_filter($allPorts, function ($port) use ($userPort) {
+            return $port !== $userPort;
+        }));
+
+        // Sort destination ports by proximity to userPort using the swap config
+        $sortedDestinationPorts = $this->sortByProximity($userPort, $destinationPorts, $swapConfig);
+
+        // Get distribution percentages based on number of destination ports
+        $distributionPercentages = $this->getDistributionPercentages(count($destinationPorts));
+
+        // For each destination port, assign a distribution percentage based on proximity
+        $distributionMap = [];
+        foreach ($sortedDestinationPorts as $index => $port) {
+            if (isset($distributionPercentages[$index])) {
+                $distributionMap[$port] = $distributionPercentages[$index];
+            }
         }
 
-        // Create a list of ports excluding user's port
-        $otherPorts = array_values(array_diff($validPorts, [$userPort]));
+        // Calculate actual container counts based on percentages
+        $containersPerDestination = [];
+        $total = array_sum($distributionMap);
 
-        // Limit to 4 ports max (including user port)
-        if (count($otherPorts) > 3) {
-            $otherPorts = array_slice($otherPorts, 0, 3);
+        foreach ($distributionMap as $port => $percentage) {
+            $containersPerDestination[$port] = round($targetContainers * ($percentage / $total));
         }
 
-        // Prepare container distribution
-        $portsToPlace = array_merge([$userPort], $otherPorts);
+        // Ensure we match exactly our target container count
+        $totalPlanned = array_sum($containersPerDestination);
+        if ($totalPlanned !== $targetContainers) {
+            // Find highest percentage port to adjust
+            arsort($distributionMap);
+            $highestPort = array_key_first($distributionMap);
+            $containersPerDestination[$highestPort] += ($targetContainers - $totalPlanned);
+        }
 
         // Prepare container ID counter
         $nextId = 1;
@@ -583,214 +598,258 @@ class RoomController extends Controller
             $nextId++;
         }
 
-        // Create a map to track containers we've placed for each port
-        $placedCounts = [];
-        foreach ($portsToPlace as $port) {
-            $placedCounts[$port] = 0;
-        }
-
-        // Define available positions - only bottom row first
-        $bottomPositions = [];
+        // Define all possible cell positions
+        $allPositions = [];
         for ($bay = 0; $bay < $bayCount; $bay++) {
-            for ($col = 0; $col < $colCount; $col++) {
-                $bottomPositions[] = [
-                    'bay' => $bay,
-                    'row' => $bottomRowIndex,
-                    'col' => $col
-                ];
+            for ($row = 0; $row < $rowCount; $row++) {
+                for ($col = 0; $col < $colCount; $col++) {
+                    $allPositions[] = [
+                        'bay' => $bay,
+                        'row' => $row,
+                        'col' => $col
+                    ];
+                }
             }
         }
 
-        // Shuffle bottom positions to randomize placement
-        shuffle($bottomPositions);
+        // Sort positions: bottom rows first, then upper rows
+        usort($allPositions, function ($a, $b) use ($bottomRowIndex) {
+            // Compare rows (bottom row first)
+            if ($a['row'] != $b['row']) {
+                return $a['row'] > $b['row'] ? -1 : 1;
+            }
+            // Same row, sort by bay
+            if ($a['bay'] != $b['bay']) {
+                return $a['bay'] - $b['bay'];
+            }
+            // Same bay, sort by column
+            return $a['col'] - $b['col'];
+        });
 
-        // Step 1: Place containers in the bottom row first
-        foreach ($bottomPositions as $position) {
-            // If all ports have enough containers, stop
-            $allPortsFilled = true;
-            foreach ($portsToPlace as $port) {
-                if ($placedCounts[$port] < $containersPerPort) {
-                    $allPortsFilled = false;
-                    break;
+        // Track occupied positions
+        $occupiedPositions = [];
+        $positionsChecked = 0;
+
+        // Create containers according to our distribution
+        foreach ($containersPerDestination as $destinationPort => $count) {
+            for ($i = 0; $i < $count; $i++) {
+                // Find a valid position
+                $position = null;
+                foreach ($allPositions as $pos) {
+                    $positionsChecked++;
+                    $bay = $pos['bay'];
+                    $row = $pos['row'];
+                    $col = $pos['col'];
+
+                    // Position key for tracking
+                    $positionKey = "$bay-$row-$col";
+
+                    // Skip if already occupied
+                    if (isset($occupiedPositions[$positionKey])) {
+                        continue;
+                    }
+
+                    // Position is valid if bottom row or has container below
+                    $isBottomRow = ($row === $bottomRowIndex);
+                    $hasContainerBelow = isset($occupiedPositions["$bay-" . ($row + 1) . "-$col"]);
+
+                    if ($isBottomRow || $hasContainerBelow) {
+                        $position = $pos;
+                        break;
+                    }
                 }
-            }
 
-            if ($allPortsFilled) {
-                break;
-            }
-
-            // Find a port that needs more containers
-            $portToPlace = null;
-            foreach ($portsToPlace as $port) {
-                if ($placedCounts[$port] < $containersPerPort) {
-                    $portToPlace = $port;
-                    break;
+                if (!$position) {
+                    continue;
                 }
-            }
 
-            if (!$portToPlace) {
-                continue;
-            }
+                $bay = $position['bay'];
+                $row = $position['row'];
+                $col = $position['col'];
+                $positionKey = "$bay-$row-$col";
 
-            $bay = $position['bay'];
-            $row = $position['row'];
-            $col = $position['col'];
+                // Mark position as occupied
+                $occupiedPositions[$positionKey] = true;
 
-            // Calculate position index for flat format
-            $positionIndex = $bay * $rowCount * $colCount + $row * $colCount + $col;
+                // Determine container type based on bay type
+                $bayType = $bayTypes[$bay] ?? 'dry';
+                $containerType = 'dry'; // Default to dry
 
-            // Check if position is already occupied in our flat structure
-            $positionOccupied = false;
-            foreach ($flatArena['containers'] as $container) {
-                if ($container['position'] === $positionIndex) {
-                    $positionOccupied = true;
-                    break;
+                // 20% chance to be reefer if bay supports it
+                if ($bayType === 'reefer' && rand(1, 5) === 1) {
+                    $containerType = 'reefer';
                 }
-            }
 
-            if ($positionOccupied) {
-                continue;
-            }
+                // Calculate flat position index for storage format
+                $flatPositionIndex = $bay * $rowCount * $colCount + $row * $colCount + $col;
 
-            // Determine container properties
-            $destinationPort = $portToPlace;
-            $isForUserPort = $destinationPort === $userPort;
-            $originPort = $isForUserPort ? $otherPorts[array_rand($otherPorts)] : $userPort;
+                // Calculate revenue based on origin-destination pair
+                $revenue = $this->calculateRevenueByDistance($userPort, $destinationPort, $containerType);
 
-            // Determine container type based on bay type
-            $bayType = $bayTypes[$bay] ?? 'dry';
-            $containerType = $bayType === 'reefer' ? 'reefer' : 'dry';
+                // Create card with random priority
+                $priority = rand(1, 10) <= 5 ? "Committed" : "Non-Committed";
+                $cardId = (string)$nextId++;
 
-            // Create the container
-            $cardId = (string)$nextId++;
-            $revenue = rand(5000000, 15000000);
-            $priority = rand(1, 10) <= 5 ? "Committed" : "Non-Committed";
+                try {
+                    // Create card record
+                    $card = Card::create([
+                        'id' => $cardId,
+                        'type' => $containerType,
+                        'priority' => $priority,
+                        'origin' => $userPort,
+                        'destination' => $destinationPort,
+                        'quantity' => 1,
+                        'revenue' => $revenue,
+                        'is_initial' => true,
+                        'generated_for_room_id' => $room->id
+                    ]);
 
-            try {
-                // Create card record
-                $card = Card::create([
-                    'id' => $cardId,
-                    'type' => $containerType,
-                    'priority' => $priority,
-                    'origin' => $originPort,
-                    'destination' => $destinationPort,
-                    'quantity' => 1,
-                    'revenue' => $revenue,
-                    'is_initial' => true,
-                    'generated_for_room_id' => $room->id
-                ]);
+                    // Create container record
+                    $container = Container::create([
+                        'color' => $this->generateContainerColor($destinationPort),
+                        'card_id' => $cardId,
+                        'type' => $containerType
+                    ]);
 
-                // Create container record
-                $container = Container::create([
-                    'color' => $this->generateContainerColor($destinationPort),
-                    'card_id' => $cardId,
-                    'type' => $containerType
-                ]);
+                    // Add to flat arena structure
+                    $flatArena['containers'][] = [
+                        'id' => $container->id,
+                        'position' => $flatPositionIndex,
+                        'bay' => $bay,
+                        'row' => $row,
+                        'col' => $col,
+                        'cardId' => $cardId,
+                        'type' => $containerType,
+                        'origin' => $userPort,
+                        'destination' => $destinationPort
+                    ];
 
-                // Add container to flat arena structure
-                $flatArena['containers'][] = [
-                    'id' => $container->id,
-                    'position' => $positionIndex,
-                    'bay' => $bay,
-                    'row' => $row,
-                    'col' => $col,
-                    'cardId' => $cardId,
-                    'type' => $containerType,
-                    'origin' => $originPort,
-                    'destination' => $destinationPort
-                ];
-
-                $flatArena['totalContainers']++;
-                $placedCounts[$destinationPort]++;
-            } catch (\Exception $e) {
-                // Log error or handle exception
-                continue;
+                    $flatArena['totalContainers']++;
+                } catch (\Exception $e) {
+                    continue;
+                }
             }
         }
 
         return $flatArena;
     }
 
-    private function createContainer($bay, $row, $col, $bayTypes, $userPort, $validPorts, $nextId, $bottomRowIndex)
-    {
-        $bayType = $bayTypes[$bay] ?? 'dry';
-        $containerType = $bayType === 'reefer' ? 'reefer' : (rand(1, 10) <= 8 ? 'dry' : 'reefer');
-
-        if ($containerType === 'reefer' && $bayType !== 'reefer') {
-            return null;
-        }
-
-        $availablePorts = array_values(array_diff($validPorts, [$userPort]));
-        if (empty($availablePorts)) {
-            return null;
-        }
-
-        // Untuk container di baris bawah, 30% chance untuk jadi tujuan user
-        $isForUserPort = ($row === $bottomRowIndex) && (rand(1, 10) <= 3);
-        if ($isForUserPort) {
-            $originPort = $availablePorts[array_rand($availablePorts)];
-            $destinationPort = $userPort;
-        } else {
-            $isForUnloading = (rand(1, 10) <= 6);
-            if ($isForUnloading) {
-                $originPort = $availablePorts[array_rand($availablePorts)];
-                $destinationPort = $availablePorts[array_rand($availablePorts)];
-                while ($destinationPort == $originPort && count($availablePorts) > 1) {
-                    $destinationPort = $availablePorts[array_rand($availablePorts)];
-                }
-            } else {
-                $originPort = $userPort;
-                $destinationPort = $availablePorts[array_rand($availablePorts)];
-            }
-        }
-
-        $cardId = (string)$nextId;
-        $revenue = rand(5000000, 15000000);
-        $priority = rand(1, 10) <= 7 ? "Committed" : "Non-Committed";
-
-        try {
-            $card = Card::create([
-                'id' => $cardId,
-                'type' => $containerType,
-                'priority' => $priority,
-                'origin' => $originPort,
-                'destination' => $destinationPort,
-                'quantity' => 1,
-                'revenue' => $revenue
-            ]);
-
-            $container = Container::create([
-                'color' => $this->generateContainerColor($destinationPort),
-                'card_id' => $cardId,
-                'type' => $containerType
-            ]);
-
-            return [
-                'container_id' => $container->id,
-                'card_id' => $card->id,
-                'destination' => $destinationPort, // informasi tujuan ditambahkan
-            ];
-        } catch (\Exception $e) {
-            return null;
-        }
-    }
-
+    // Add this method if it doesn't exist
     private function generateContainerColor($destination)
     {
         $colorMap = [
             'SBY' => 'red',
-            'MKS' => 'blue',
             'MDN' => 'green',
+            'MKS' => 'blue',
             'JYP' => 'yellow',
             'BPN' => 'purple',
             'BKS' => 'orange',
             'BGR' => 'pink',
             'BTH' => 'brown',
             'AMQ' => 'cyan',
-            'SMR' => 'teal',
+            'SMR' => 'teal'
         ];
 
         return $colorMap[$destination] ?? 'gray';
+    }
+
+    // Helper function to calculate revenue based on origin-destination pair
+    private function calculateRevenueByDistance($origin, $destination, $containerType)
+    {
+        // Get first 3 characters for port codes
+        $originCode = substr($origin, 0, 3);
+        $destinationCode = substr($destination, 0, 3);
+
+        $basePrices = $this->getBasePriceMap();
+        $key = "{$originCode}-{$destinationCode}-{$containerType}";
+
+        if (isset($basePrices[$key])) {
+            return $basePrices[$key];
+        }
+
+        // Fallback default price
+        return $containerType === 'reefer' ? 30000000 : 18000000;
+    }
+
+    private function sortByProximity($originPort, $destinationPorts, $swapConfig)
+    {
+        if (empty($swapConfig)) {
+            return $destinationPorts;
+        }
+
+        $route = [];
+        $currentPort = $originPort;
+        $maxPorts = count($destinationPorts) + 1;
+        $count = 0;
+
+        // Build route starting from origin
+        while ($currentPort && isset($swapConfig[$currentPort]) && $count < $maxPorts) {
+            $route[] = $currentPort;
+            $currentPort = $swapConfig[$currentPort];
+            $count++;
+        }
+
+        // Add the last port if it's not already in the route
+        if ($currentPort && !in_array($currentPort, $route)) {
+            $route[] = $currentPort;
+        }
+
+        // If route is incomplete, add any missing ports
+        foreach ($destinationPorts as $port) {
+            if (!in_array($port, $route)) {
+                $route[] = $port;
+            }
+        }
+
+        // Remove origin port from route
+        $route = array_values(array_filter($route, function ($port) use ($originPort) {
+            return $port !== $originPort;
+        }));
+
+        // Order destination ports by proximity (first in route = closest)
+        $sortedPorts = [];
+        foreach ($route as $port) {
+            if (in_array($port, $destinationPorts)) {
+                $sortedPorts[] = $port;
+            }
+        }
+
+        return $sortedPorts;
+    }
+
+    private function getDistributionPercentages($portCount)
+    {
+        switch ($portCount) {
+            case 1:
+                return [100]; // 100% to the only other port
+
+            case 2:
+                return [60, 40]; // 60% to closest, 40% to furthest
+
+            case 3:
+                return [50, 30, 20]; // 50% to closest, 30% to second, 20% to furthest
+
+            case 4:
+                return [36, 24, 21, 18]; // As specified in requirements (SBY example)
+
+            case 5:
+                return [30, 25, 20, 15, 10]; // Diminishing distribution
+
+            case 6:
+                return [25, 22, 18, 15, 12, 8]; // Diminishing distribution
+
+            case 7:
+                return [22, 19, 16, 13, 12, 10, 8]; // Diminishing distribution
+
+            case 8:
+                return [20, 17, 14, 12, 11, 10, 9, 7]; // Diminishing distribution
+
+            case 9:
+                return [18, 15, 13, 12, 11, 10, 8, 7, 6]; // Diminishing distribution
+
+            default: // 10 or more ports
+                return [16, 14, 12, 11, 10, 9, 8, 8, 7, 5]; // Diminishing distribution
+        }
     }
 
     public function getBayConfig($roomId)
@@ -946,5 +1005,210 @@ class RoomController extends Controller
             'message' => 'Swap configuration updated successfully',
             'swap_config' => json_decode($room->swap_config),
         ]);
+    }
+
+    private function getBasePriceMap()
+    {
+        return [
+            // SBY routes (SURABAYA)
+            "SBY-MDN-Reefer" => 23000000,  // Terdekat
+            "SBY-MDN-Dry" => 14000000,
+            "SBY-MKS-Reefer" => 27600000,  // Kedua terdekat
+            "SBY-MKS-Dry" => 16800000,
+            "SBY-JYP-Reefer" => 32200000,  // Ketiga terdekat
+            "SBY-JYP-Dry" => 19600000,
+            "SBY-BPN-Reefer" => 36800000,  // Terjauh
+            "SBY-BPN-Dry" => 22400000,
+            "SBY-BKS-Reefer" => 26000000,
+            "SBY-BKS-Dry" => 15000000,
+            "SBY-BGR-Reefer" => 25000000,
+            "SBY-BGR-Dry" => 14000000,
+            "SBY-BTH-Reefer" => 27000000,
+            "SBY-BTH-Dry" => 16000000,
+            "SBY-AMQ-Reefer" => 32000000,
+            "SBY-AMQ-Dry" => 19000000,
+            "SBY-SMR-Reefer" => 29000000,
+            "SBY-SMR-Dry" => 17000000,
+
+            // MDN routes (MEDAN)
+            "MDN-MKS-Reefer" => 23000000,  // Terdekat
+            "MDN-MKS-Dry" => 14000000,
+            "MDN-JYP-Reefer" => 27600000,  // Kedua terdekat
+            "MDN-JYP-Dry" => 16800000,
+            "MDN-BPN-Reefer" => 32200000,  // Ketiga terdekat
+            "MDN-BPN-Dry" => 19600000,
+            "MDN-SBY-Reefer" => 36800000,  // Terjauh
+            "MDN-SBY-Dry" => 22400000,
+            "MDN-BKS-Reefer" => 25000000,
+            "MDN-BKS-Dry" => 14000000,
+            "MDN-BGR-Reefer" => 24000000,
+            "MDN-BGR-Dry" => 13000000,
+            "MDN-BTH-Reefer" => 23000000,
+            "MDN-BTH-Dry" => 12000000,
+            "MDN-AMQ-Reefer" => 30000000,
+            "MDN-AMQ-Dry" => 18000000,
+            "MDN-SMR-Reefer" => 28000000,
+            "MDN-SMR-Dry" => 16000000,
+
+            // MKS routes (MAKASSAR)
+            "MKS-JYP-Reefer" => 23000000,  // Terdekat
+            "MKS-JYP-Dry" => 14000000,
+            "MKS-BPN-Reefer" => 27600000,  // Kedua terdekat
+            "MKS-BPN-Dry" => 16800000,
+            "MKS-SBY-Reefer" => 32200000,  // Ketiga terdekat
+            "MKS-SBY-Dry" => 19600000,
+            "MKS-MDN-Reefer" => 36800000,  // Terjauh
+            "MKS-MDN-Dry" => 22400000,
+            "MKS-BKS-Reefer" => 23000000,
+            "MKS-BKS-Dry" => 13000000,
+            "MKS-BGR-Reefer" => 22000000,
+            "MKS-BGR-Dry" => 12000000,
+            "MKS-BTH-Reefer" => 26000000,
+            "MKS-BTH-Dry" => 15000000,
+            "MKS-AMQ-Reefer" => 28000000,
+            "MKS-AMQ-Dry" => 17000000,
+            "MKS-SMR-Reefer" => 27000000,
+            "MKS-SMR-Dry" => 16000000,
+
+            // JYP routes (JAYAPURA)
+            "JYP-BPN-Reefer" => 23000000,  // Terdekat
+            "JYP-BPN-Dry" => 14000000,
+            "JYP-SBY-Reefer" => 27600000,  // Kedua terdekat
+            "JYP-SBY-Dry" => 16800000,
+            "JYP-MDN-Reefer" => 32200000,  // Ketiga terdekat
+            "JYP-MDN-Dry" => 19600000,
+            "JYP-MKS-Reefer" => 36800000,  // Terjauh
+            "JYP-MKS-Dry" => 22400000,
+            "JYP-BKS-Reefer" => 22000000,
+            "JYP-BKS-Dry" => 12000000,
+            "JYP-BGR-Reefer" => 21000000,
+            "JYP-BGR-Dry" => 11000000,
+            "JYP-BTH-Reefer" => 25000000,
+            "JYP-BTH-Dry" => 14000000,
+            "JYP-AMQ-Reefer" => 29000000,
+            "JYP-AMQ-Dry" => 18000000,
+            "JYP-SMR-Reefer" => 26000000,
+            "JYP-SMR-Dry" => 15000000,
+
+            // BPN routes (BALIKPAPAN)
+            "BPN-JYP-Reefer" => 23000000,  // Terdekat
+            "BPN-JYP-Dry" => 14000000,
+            "BPN-SBY-Reefer" => 27600000,  // Kedua terdekat
+            "BPN-SBY-Dry" => 16800000,
+            "BPN-MDN-Reefer" => 32200000,  // Ketiga terdekat
+            "BPN-MDN-Dry" => 19600000,
+            "BPN-MKS-Reefer" => 36800000,  // Terjauh
+            "BPN-MKS-Dry" => 22400000,
+            "BPN-BKS-Reefer" => 23000000,
+            "BPN-BKS-Dry" => 13000000,
+            "BPN-BGR-Reefer" => 22000000,
+            "BPN-BGR-Dry" => 12000000,
+            "BPN-BTH-Reefer" => 25000000,
+            "BPN-BTH-Dry" => 15000000,
+            "BPN-AMQ-Reefer" => 28000000,
+            "BPN-AMQ-Dry" => 17000000,
+            "BPN-SMR-Reefer" => 24000000,
+            "BPN-SMR-Dry" => 14000000,
+
+            // BKS routes
+            "BKS-SBY-Reefer" => 21000000,
+            "BKS-SBY-Dry" => 12000000,
+            "BKS-MKS-Reefer" => 23000000,
+            "BKS-MKS-Dry" => 13000000,
+            "BKS-MDN-Reefer" => 25000000,
+            "BKS-MDN-Dry" => 15000000,
+            "BKS-JYP-Reefer" => 22000000,
+            "BKS-JYP-Dry" => 12000000,
+            "BKS-BPN-Reefer" => 24000000,
+            "BKS-BPN-Dry" => 14000000,
+            "BKS-BGR-Reefer" => 20000000,
+            "BKS-BGR-Dry" => 11000000,
+            "BKS-BTH-Reefer" => 26000000,
+            "BKS-BTH-Dry" => 16000000,
+            "BKS-AMQ-Reefer" => 29000000,
+            "BKS-AMQ-Dry" => 18000000,
+            "BKS-SMR-Reefer" => 25000000,
+            "BKS-SMR-Dry" => 15000000,
+
+            // BGR routes
+            "BGR-SBY-Reefer" => 22000000,
+            "BGR-SBY-Dry" => 13000000,
+            "BGR-MKS-Reefer" => 24000000,
+            "BGR-MKS-Dry" => 14000000,
+            "BGR-MDN-Reefer" => 26000000,
+            "BGR-MDN-Dry" => 16000000,
+            "BGR-JYP-Reefer" => 23000000,
+            "BGR-JYP-Dry" => 13000000,
+            "BGR-BPN-Reefer" => 25000000,
+            "BGR-BPN-Dry" => 15000000,
+            "BGR-BKS-Reefer" => 21000000,
+            "BGR-BKS-Dry" => 12000000,
+            "BGR-BTH-Reefer" => 27000000,
+            "BGR-BTH-Dry" => 17000000,
+            "BGR-AMQ-Reefer" => 30000000,
+            "BGR-AMQ-Dry" => 19000000,
+            "BGR-SMR-Reefer" => 26000000,
+            "BGR-SMR-Dry" => 16000000,
+
+            // BTH routes
+            "BTH-SBY-Reefer" => 23000000,
+            "BTH-SBY-Dry" => 14000000,
+            "BTH-MKS-Reefer" => 25000000,
+            "BTH-MKS-Dry" => 15000000,
+            "BTH-MDN-Reefer" => 27000000,
+            "BTH-MDN-Dry" => 17000000,
+            "BTH-JYP-Reefer" => 24000000,
+            "BTH-JYP-Dry" => 14000000,
+            "BTH-BPN-Reefer" => 26000000,
+            "BTH-BPN-Dry" => 16000000,
+            "BTH-BKS-Reefer" => 22000000,
+            "BTH-BKS-Dry" => 13000000,
+            "BTH-BGR-Reefer" => 23000000,
+            "BTH-BGR-Dry" => 14000000,
+            "BTH-AMQ-Reefer" => 31000000,
+            "BTH-AMQ-Dry" => 20000000,
+            "BTH-SMR-Reefer" => 27000000,
+            "BTH-SMR-Dry" => 17000000,
+
+            // AMQ routes
+            "AMQ-SBY-Reefer" => 24000000,
+            "AMQ-SBY-Dry" => 15000000,
+            "AMQ-MKS-Reefer" => 26000000,
+            "AMQ-MKS-Dry" => 16000000,
+            "AMQ-MDN-Reefer" => 28000000,
+            "AMQ-MDN-Dry" => 18000000,
+            "AMQ-JYP-Reefer" => 25000000,
+            "AMQ-JYP-Dry" => 15000000,
+            "AMQ-BPN-Reefer" => 27000000,
+            "AMQ-BPN-Dry" => 17000000,
+            "AMQ-BKS-Reefer" => 23000000,
+            "AMQ-BKS-Dry" => 14000000,
+            "AMQ-BGR-Reefer" => 24000000,
+            "AMQ-BGR-Dry" => 15000000,
+            "AMQ-BTH-Reefer" => 28000000,
+            "AMQ-BTH-Dry" => 18000000,
+            "AMQ-SMR-Reefer" => 25000000,
+            "AMQ-SMR-Dry" => 15000000,
+
+            // SMR routes
+            "SMR-SBY-Reefer" => 25000000,
+            "SMR-SBY-Dry" => 16000000,
+            "SMR-MKS-Reefer" => 27000000,
+            "SMR-MKS-Dry" => 17000000,
+            "SMR-MDN-Reefer" => 29000000,
+            "SMR-MDN-Dry" => 19000000,
+            "SMR-JYP-Reefer" => 26000000,
+            "SMR-JYP-Dry" => 16000000,
+            "SMR-BPN-Reefer" => 28000000,
+            "SMR-BPN-Dry" => 18000000,
+            "SMR-BKS-Reefer" => 24000000,
+            "SMR-BKS-Dry" => 15000000,
+            "SMR-BGR-Reefer" => 25000000,
+            "SMR-BGR-Dry" => 16000000,
+            "SMR-BTH-Reefer" => 29000000,
+            "SMR-BTH-Dry" => 19000000,
+            "SMR-AMQ-Reefer" => 26000000,
+            "SMR-AMQ-Dry" => 16000000,
+        ];
     }
 }

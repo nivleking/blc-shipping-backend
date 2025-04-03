@@ -549,7 +549,8 @@ class RoomController extends Controller
             'totalContainers' => 0
         ];
 
-        $targetContainers = 18;
+        $maxTotalContainersInShipbay = $bayCount * $rowCount * $colCount;
+        $targetContainers = 0.3 * $maxTotalContainersInShipbay;
 
         // Get room information
         $room = Room::find(request()->route('room')->id);
@@ -596,9 +597,12 @@ class RoomController extends Controller
         }
 
         // Prepare container ID counter
-        $nextId = 1;
+        $roomPrefix = "R" . $room->id . "-";
+        $counter = 1;
+        $nextId = $roomPrefix . $counter;
         while (Card::where('id', (string)$nextId)->exists()) {
-            $nextId++;
+            $counter++;
+            $nextId = $roomPrefix . $counter;
         }
 
         // Define all possible cell positions
@@ -678,8 +682,7 @@ class RoomController extends Controller
                 $bayType = $bayTypes[$bay] ?? 'dry';
                 $containerType = 'dry'; // Default to dry
 
-                // 20% chance to be reefer if bay supports it
-                if ($bayType === 'reefer' && rand(1, 5) === 1) {
+                if ($bayType === 'reefer') {
                     $containerType = 'reefer';
                 }
 
@@ -691,7 +694,13 @@ class RoomController extends Controller
 
                 // Create card with random priority
                 $priority = rand(1, 10) <= 5 ? "Committed" : "Non-Committed";
-                $cardId = (string)$nextId++;
+
+                // Generate a unique card ID
+                $cardId = $roomPrefix . $counter;
+                while (Card::where('id', (string)$cardId)->exists()) {
+                    $counter++;
+                    $cardId = $roomPrefix . $counter;
+                }
 
                 try {
                     // Create card record
@@ -737,12 +746,10 @@ class RoomController extends Controller
         return $flatArena;
     }
 
-    // Helper function to calculate revenue based on origin-destination pair
     private function calculateRevenueByDistance($origin, $destination, $containerType)
     {
-        // Get first 3 characters for port codes
-        $originCode = substr($origin, 0, 3);
-        $destinationCode = substr($destination, 0, 3);
+        $originCode = $origin;
+        $destinationCode = $destination;
 
         $basePrices = $this->getBasePriceMap();
         $key = "{$originCode}-{$destinationCode}-{$containerType}";
@@ -751,7 +758,6 @@ class RoomController extends Controller
             return $basePrices[$key];
         }
 
-        // Fallback default price
         return $containerType === 'reefer' ? 30000000 : 18000000;
     }
 
@@ -882,7 +888,7 @@ class RoomController extends Controller
     {
         return CardTemporary::where('room_id', $roomId)
             ->where('user_id', $userId)
-            ->with('card') // This will eager load the card relationship
+            ->with('card')
             ->get();
     }
 

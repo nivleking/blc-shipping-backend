@@ -22,6 +22,7 @@ class CardController extends Controller
     {
         $validated = $request->validate([
             'id' => 'required|string',
+            'deck_id' => 'required|exists:decks,id',
             'priority' => 'required|string',
             'origin' => 'required|string',
             'destination' => 'required|string',
@@ -38,15 +39,13 @@ class CardController extends Controller
             ], 422);
         }
 
-        if (Card::where('id', $validated['id'])->exists()) {
-            if (isset($validated['mode']) && $validated['mode'] == "auto_generate") {
-                $validated['id'] = $this->getNextAvailableId();
-                $numericId = intval($validated['id']);
-            } else {
-                return response()->json([
-                    'message' => 'Card with this ID already exists',
-                ], 422);
-            }
+        if (Card::where('id', $validated['id'])
+            ->where('deck_id', $validated['deck_id'])
+            ->exists()
+        ) {
+            return response()->json([
+                'message' => 'Card with this ID already exists in this deck',
+            ], 422);
         }
 
         $validated['type'] = ($numericId % 5 === 0) ? 'reefer' : 'dry';
@@ -57,6 +56,7 @@ class CardController extends Controller
             $card->containers()->create([
                 'color' => $color,
                 'type' => $validated['type'],
+                'deck_id' => $validated['deck_id'],
             ]);
         }
 
@@ -68,18 +68,10 @@ class CardController extends Controller
         return $card;
     }
 
-    private function getNextAvailableId()
-    {
-        $id = 1;
-        while (Card::where('id', (string)$id)->exists()) {
-            $id++;
-        }
-        return (string)$id;
-    }
-
     public function update(Request $request, Card $card)
     {
         $validated = $request->validate([
+            'deck_id' => 'required|exists:decks,id',
             'type' => 'string',
             'priority' => 'string',
             'origin' => 'string',
@@ -87,6 +79,10 @@ class CardController extends Controller
             'quantity' => 'integer',
             'revenue' => 'integer',
         ]);
+
+        $card = Card::where('id', $card->id)
+            ->where('deck_id', $validated['deck_id'])
+            ->firstOrFail();
 
         // Store the old values for comparison
         $oldType = $card->type;
@@ -121,7 +117,8 @@ class CardController extends Controller
                 for ($i = 0; $i < $containersToAdd; $i++) {
                     $card->containers()->create([
                         'type' => $containerType,
-                        'color' => $containerColor
+                        'color' => $containerColor,
+                        'deck_id' => $card->deck_id,
                     ]);
                 }
             } else if ($validated['quantity'] < $oldQuantity) {
@@ -135,9 +132,19 @@ class CardController extends Controller
         return response()->json($card->load('containers'), 200);
     }
 
-    public function destroy(Card $card)
+    public function destroy(Request $request, Card $card)
     {
-        $card->delete();
+        $validated = $request->validate([
+            'deck_id' => 'required|exists:decks,id',
+        ]);
+
+        $card = Card::where('id', $card->id)
+            ->where('deck_id', $validated['deck_id'])
+            ->firstOrFail();
+        $card->containers()->where('deck_id', $validated['deck_id'])->delete();
+        Card::where('id', $card->id)
+            ->where('deck_id', $validated['deck_id'])
+            ->delete();
 
         return response()->json(null, 204);
     }
@@ -192,7 +199,10 @@ class CardController extends Controller
         $salesCalls = [];
         $id = 1;
 
-        while (Card::where('id', (string)$id)->exists()) {
+        while (Card::where('id', (string)$id)
+            ->where('deck_id', $deck->id)
+            ->exists()
+        ) {
             $id++;
         }
 
@@ -269,6 +279,7 @@ class CardController extends Controller
         foreach ($salesCalls as $salesCallData) {
             $cardRequest = new Request([
                 'id' => (string)$salesCallData['id'],
+                'deck_id' => $deck->id,
                 'type' => $salesCallData['type'],
                 'priority' => $salesCallData['priority'],
                 'origin' => $salesCallData['origin'],
@@ -279,12 +290,6 @@ class CardController extends Controller
             ]);
 
             $response = $this->store($cardRequest);
-            $responseData = json_decode($response->getContent());
-            $salesCall = Card::find($responseData->id);
-
-            if ($salesCall) {
-                $deck->cards()->attach($salesCall->id);
-            }
         }
 
         return response()->json($deck->load('cards'), 201);
@@ -384,13 +389,17 @@ class CardController extends Controller
 
                 $revenue = $quantity * $revenuePerContainer;
 
-                if (Card::where('id', $id)->exists()) {
-                    $errors[] = "Row " . ($index + 12) . ": Card with ID $id already exists";
+                if (Card::where('id', $id)
+                    ->where('deck_id', $deck->id)
+                    ->exists()
+                ) {
+                    $errors[] = "Row " . ($index + 12) . ": Card with ID $id already exists in this deck";
                     continue;
                 }
 
                 $card = Card::create([
                     'id' => $id,
+                    'deck_id' => $deck->id,
                     'type' => $type,
                     'priority' => $priority,
                     'origin' => $origin,
@@ -404,10 +413,9 @@ class CardController extends Controller
                     $card->containers()->create([
                         'color' => $color,
                         'type' => $type,
+                        'deck_id' => $deck->id,
                     ]);
                 }
-
-                $deck->cards()->attach($card->id);
 
                 $createdCards[] = $card;
             }
@@ -434,12 +442,20 @@ class CardController extends Controller
 
     private function destroyAllCardsInDeck(Deck $deck)
     {
-        // Clear existing cards
-        if ($deck->cards()->count() > 0) {
-            foreach ($deck->cards as $card) {
-                $deck->cards()->detach($card->id);
-                $card->delete();
+        try {
+            if ($deck->cards()->count() > 0) {
+                foreach ($deck->cards as $card) {
+                    $card->containers()
+                        ->where('deck_id', $deck->id)
+                        ->delete();
+                    Card::where('id', $card->id)
+                        ->where('deck_id', $deck->id)
+                        ->delete();
+                }
             }
+            return true;
+        } catch (\Exception $e) {
+            return false;
         }
     }
 }

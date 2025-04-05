@@ -13,7 +13,7 @@ class Deck extends Model
 
     public function cards()
     {
-        return $this->belongsToMany(Card::class, 'card_deck', 'deck_id', 'card_id');
+        return $this->hasMany(Card::class);
     }
 
     public function marketIntelligence()

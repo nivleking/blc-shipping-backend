@@ -13,22 +13,22 @@ class CardTemporary extends Model
         'user_id',
         'room_id',
         'card_id',
+        'deck_id',
         'status',
+        'round'
     ];
 
-    // Add this relationship
     public function card()
     {
-        return $this->belongsTo(Card::class);
+        return $this->belongsTo(Card::class, 'card_id', 'id')
+            ->where('deck_id', $this->deck_id);
     }
 
-    // Add user relationship if needed
     public function user()
     {
         return $this->belongsTo(User::class);
     }
 
-    // Add room relationship if needed
     public function room()
     {
         return $this->belongsTo(Room::class);

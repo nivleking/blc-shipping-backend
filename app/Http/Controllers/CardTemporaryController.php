@@ -37,7 +37,8 @@ class CardTemporaryController extends Controller
                 $existing = CardTemporary::where([
                     'user_id' => $request->user_id,
                     'room_id' => $request->room_id,
-                    'card_id' => $card['card_id']
+                    'card_id' => $card['card_id'],
+                    'deck_id' => $card['deck_id'],
                 ])->first();
 
                 if (!$existing) {
@@ -45,6 +46,7 @@ class CardTemporaryController extends Controller
                         'user_id' => $request->user_id,
                         'room_id' => $request->room_id,
                         'card_id' => $card['card_id'],
+                        'deck_id' => $card['deck_id'],
                         'status' => $status,
                         'round' => $cardRound
                     ]);

@@ -15,12 +15,13 @@ return new class extends Migration
             $table->id();
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
             $table->string('room_id');
-            $table->foreign('room_id')->references('id')->on('rooms')->onDelete('cascade');
             $table->string('card_id');
-            $table->foreign('card_id')->references('id')->on('cards')->onDelete('cascade');
+            $table->foreignId('deck_id');
             $table->string('status')->default('selected');
             $table->integer('round')->default(1);
             $table->timestamps();
+            $table->foreign('room_id')->references('id')->on('rooms')->onDelete('cascade');
+            $table->foreign(['card_id', 'deck_id'])->references(['id', 'deck_id'])->on('cards')->onDelete('cascade');
         });
     }
 

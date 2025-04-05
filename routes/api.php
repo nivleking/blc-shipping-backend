@@ -41,14 +41,14 @@ Route::get('/clear-cache', function () {
 });
 
 Route::get('users', [UserController::class, 'getUsers']);
-Route::get('all-users', [UserController::class, 'getAllUsers']);
-Route::get('all-admins', [UserController::class, 'getAllAdmins']);
+Route::get('users/all-users', [UserController::class, 'getAllUsers']);
+Route::get('users/all-admins', [UserController::class, 'getAllAdmins']);
 
 // Token
 Route::post('users/login', [UserController::class, 'login']);
-Route::middleware('auth:sanctum')->group(function () {
-    Route::get('users/refresh-token', [UserController::class, 'refreshToken']);
-});
+// Route::middleware('auth:sanctum')->group(function () {
+//     Route::get('users/refresh-token', [UserController::class, 'refreshToken']);
+// });
 Route::middleware('auth:sanctum', 'ability:access-api')->group(function () {
     Route::get('/user', function (Request $request) {
         return $request->user();
@@ -65,18 +65,19 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/users/{user}/password', [UserController::class, 'showPassword']);
 });
 
-// Admin - Deck Routes
+// Admin - Deck Routes)
 Route::get('decks', [DeckController::class, 'index']);
 Route::post('decks', [DeckController::class, 'store']);
 Route::get('decks/{deck}', [DeckController::class, 'show']);
 Route::put('decks/{deck}', [DeckController::class, 'update']);
 Route::delete('decks/{deck}', [DeckController::class, 'destroy']);
-// Route::get('decks/{deck}/cards', [DeckController::class, 'showByDeck']);
 Route::get('decks/{deck}/origins', [DeckController::class, 'getOrigins']);
-Route::post('decks/{deck}/add-card', [DeckController::class, 'addCard']);
-Route::delete('decks/{deck}/remove-card/{salesCallCard}', [DeckController::class, 'removeCard']);
 Route::delete('decks/{deck}/cards', [DeckController::class, 'removeAllCards']);
 Route::post('decks/{deck}/import-cards', [CardController::class, 'importFromExcel']);
+Route::post('decks/{deck}/generate-cards', [CardController::class, 'generate']);
+// Route::get('decks/{deck}/cards', [DeckController::class, 'showByDeck']);
+// Route::post('decks/{deck}/add-card', [DeckController::class, 'addCard']);
+// Route::delete('decks/{deck}/remove-card/{cardId}', [DeckController::class, 'removeCard']);
 
 // Market Intelligence Routes
 Route::prefix('market-intelligence')->group(function () {
@@ -93,8 +94,6 @@ Route::get('cards/{card}', [CardController::class, 'show']);
 Route::put('cards/{card}', [CardController::class, 'update']);
 Route::delete('cards/{card}', [CardController::class, 'destroy']);
 
-Route::post('generate-cards/{deck}', [CardController::class, 'generate']);
-
 // Admin - Container Routes
 // Route::apiResource('containers', ContainerController::class);
 Route::get('containers', [ContainerController::class, 'index']);
@@ -106,7 +105,7 @@ Route::get('containers/{container}', [ContainerController::class, 'show']);
 
 // Basic Room Routes
 Route::middleware('auth:sanctum')->group(function () {
-    Route::get('rooms/available-users', [RoomController::class, 'getAvailableUsers']);
+    // Route::get('rooms/available-users', [RoomController::class, 'getAvailableUsers']);
     Route::get('rooms', [RoomController::class, 'index'])->middleware('admin');
     Route::post('rooms', [RoomController::class, 'store'])->middleware('admin');
     Route::get('rooms/{room}', [RoomController::class, 'show']);
@@ -119,21 +118,20 @@ Route::post('rooms/{room}/join', [RoomController::class, 'joinRoom'])->middlewar
 Route::post('rooms/{room}/leave', [RoomController::class, 'leaveRoom'])->middleware('auth:sanctum', 'user');
 Route::delete('rooms/{room}/kick/{user}', [RoomController::class, 'kickUser'])->middleware('auth:sanctum', 'admin');
 Route::put('rooms/{room}/swap-bays', [RoomController::class, 'swapBays'])->middleware('auth:sanctum', 'admin');
-Route::put('rooms/{room}/swap-bays-custom', [RoomController::class, 'swapBaysCustom'])->middleware('auth:sanctum', 'admin');
+// Route::put('rooms/{room}/swap-bays-custom', [RoomController::class, 'swapBaysCustom'])->middleware('auth:sanctum', 'admin');
 Route::get('rooms/{room}/users', [RoomController::class, 'getRoomUsers'])->middleware('auth:sanctum');
 Route::get('rooms/{room}/deck-origins', [RoomController::class, 'getDeckOrigins'])->middleware('auth:sanctum');
 Route::put('rooms/{room}/set-ports', [RoomController::class, 'setPorts'])->middleware('auth:sanctum');
 Route::get('rooms/{room}/config', [RoomController::class, 'getBayConfig'])->middleware('auth:sanctum');
 Route::get('rooms/{room}/user-port', [RoomController::class, 'getUserPortsV1'])->middleware('auth:sanctum');
 Route::get('rooms/{room}/user-port2', [RoomController::class, 'getUserPortsV2'])->middleware('auth:sanctum');
+Route::get('rooms/{room}/rankings', [RoomController::class, 'getUsersRanking'])->middleware('auth:sanctum');
+Route::put('rooms/{room}/swap-config', [RoomController::class, 'updateSwapConfig'])->middleware('auth:sanctum');
+
 Route::post('rooms/{room}/create-card-temporary/{user}', [RoomController::class, 'createCardTemporary'])->middleware('auth:sanctum', 'admin');
-Route::get('/card-temporary/{roomId}/{userId}', [RoomController::class, 'getCardTemporaries']);
+Route::get('card-temporary/{roomId}/{userId}', [RoomController::class, 'getCardTemporaries']);
 Route::post('card-temporary/accept', [RoomController::class, 'acceptCardTemporary'])->middleware('auth:sanctum');
 Route::post('card-temporary/reject', [RoomController::class, 'rejectCardTemporary'])->middleware('auth:sanctum');
-Route::get('rooms/{room}/rankings', [RoomController::class, 'getUsersRanking'])->middleware('auth:sanctum');
-Route::put('/rooms/{room}/swap-config', [RoomController::class, 'updateSwapConfig'])->middleware('auth:sanctum');
-
-
 Route::post('/card-temporary/batch', [CardTemporaryController::class, 'batchCreate']);
 
 // ShipBay Routes
@@ -145,11 +143,11 @@ Route::get('ship-bays/{shipBay}', [ShipBayController::class, 'show']);
 
 // Other ShipBay Routes
 Route::get('ship-bays/{room}/{user}', [ShipBayController::class, 'showBayByUserAndRoom']);
-Route::put('/ship-bays/{room}/{user}/section', [ShipBayController::class, 'updateSection']);
-Route::post('/ship-bays/{room}/{user}/moves', [ShipBayController::class, 'incrementMoves'])->middleware('auth:sanctum');
-Route::post('/ship-bays/{room}/{user}/cards', [ShipBayController::class, 'incrementCards'])->middleware('auth:sanctum');
+Route::put('ship-bays/{room}/{user}/section', [ShipBayController::class, 'updateSection']);
+Route::post('ship-bays/{room}/{user}/moves', [ShipBayController::class, 'incrementMoves'])->middleware('auth:sanctum');
+Route::post('ship-bays/{room}/{user}/cards', [ShipBayController::class, 'incrementCards'])->middleware('auth:sanctum');
 Route::get('ship-bays/{room}/{user}/statistics', [ShipBayController::class, 'getBayStatistics']);
-Route::get('/rooms/{roomId}/users/{userId}/bay-statistics-history/{week?}', [ShipBayController::class, 'getBayStatisticsHistory'])->middleware('auth:sanctum');
+Route::get('rooms/{roomId}/users/{userId}/bay-statistics-history/{week?}', [ShipBayController::class, 'getBayStatisticsHistory'])->middleware('auth:sanctum');
 
 // ShipLayout Routes
 Route::middleware('auth:sanctum')->group(function () {

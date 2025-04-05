@@ -706,6 +706,7 @@ class RoomController extends Controller
                     // Create card record
                     $card = Card::create([
                         'id' => $cardId,
+                        'deck_id' => $room->deck_id,
                         'type' => $containerType,
                         'priority' => $priority,
                         'origin' => $userPort,
@@ -720,6 +721,7 @@ class RoomController extends Controller
                     $container = Container::create([
                         'color' => $this->generateContainerColor($destinationPort),
                         'card_id' => $cardId,
+                        'deck_id' => $room->deck_id,
                         'type' => $containerType
                     ]);
 
@@ -972,15 +974,15 @@ class RoomController extends Controller
         }
     }
 
-    public function getAvailableUsers()
-    {
-        $users = User::where('is_admin', false)
-            ->where('status', 'active')
-            ->select('id', 'name')
-            ->get();
+    // public function getAvailableUsers()
+    // {
+    //     $users = User::where('is_admin', false)
+    //         ->where('status', 'active')
+    //         ->select('id', 'name')
+    //         ->get();
 
-        return response()->json($users);
-    }
+    //     return response()->json($users);
+    // }
 
     public function updateSwapConfig(Request $request, Room $room)
     {

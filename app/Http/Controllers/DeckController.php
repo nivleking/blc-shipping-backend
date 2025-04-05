@@ -73,7 +73,9 @@ class DeckController extends Controller
         if ($includeContainers) {
             $cardIds = $deck->cards->pluck('id')->toArray();
 
-            $containers = Container::whereIn('card_id', $cardIds)->get();
+            $containers = Container::whereIn('card_id', $cardIds)
+                ->where('deck_id', $deck->id)
+                ->get();
 
             return response()->json([
                 'deck' => $deck,
@@ -96,9 +98,18 @@ class DeckController extends Controller
 
     public function destroy(Deck $deck)
     {
-        $this->removeAllCards($deck);
-        $deck->delete();
-        return response()->json(null, 204);
+        try {
+            $this->removeAllCards($deck);
+
+            $deck->delete();
+
+            return response()->json(null, 204);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to delete deck',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     public function showByDeck(Deck $deck)
@@ -118,7 +129,9 @@ class DeckController extends Controller
             'card_id' => 'required|exists:cards,id'
         ]);
 
-        $deck->cards()->attach($request->card_id);
+        $card = Card::findOrFail($request->card_id);
+        $card->deck_id = $deck->id;
+        $card->save();
 
         return response()->json([
             'message' => 'Card added to deck successfully',
@@ -126,37 +139,25 @@ class DeckController extends Controller
         ]);
     }
 
-    public function removeCard(Deck $deck, Card $salesCallCard)
-    {
-        try {
-            // Only detach this specific card from the deck, don't delete the card
-            $deck->cards()->detach($salesCallCard->id);
-
-            // Now delete the card and its containers since it's no longer needed
-            $salesCallCard->containers()->delete();
-            $salesCallCard->delete();
-
-            return response()->json(['message' => 'Card removed from deck successfully']);
-        } catch (\Exception $e) {
-            return response()->json(['message' => 'Failed to remove card: ' . $e->getMessage()], 500);
-        }
-    }
-
     public function removeAllCards(Deck $deck)
     {
         try {
-            $cards = $deck->cards;
+            $cards = $deck->cards->pluck('id')->toArray();
 
-            $deck->cards()->detach();
-
-            foreach ($cards as $card) {
+            foreach ($deck->cards as $card) {
                 $card->containers()->delete();
-                $card->delete();
             }
+
+            Card::whereIn('id', $cards)
+                ->where('deck_id', $deck->id)
+                ->delete();
 
             return response()->json(['message' => 'All cards removed from deck successfully']);
         } catch (\Exception $e) {
-            return response()->json(['message' => 'Failed to remove cards'], 500);
+            return response()->json([
+                'message' => 'Failed to remove cards',
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
 

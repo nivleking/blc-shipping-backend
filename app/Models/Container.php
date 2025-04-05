@@ -10,8 +10,10 @@ class Container extends Model
     use HasFactory;
 
     protected $fillable = [
-        'color',
+        'id',
         'card_id',
+        'deck_id',
+        'color',
         'type',
     ];
 
@@ -22,6 +24,7 @@ class Container extends Model
 
     public function card()
     {
-        return $this->belongsTo(Card::class);
+        return $this->belongsTo(Card::class, 'card_id', 'id')
+            ->where('deck_id', $this->deck_id);
     }
 }

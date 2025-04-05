@@ -28,7 +28,11 @@ class ContainerController extends Controller
      */
     public function show(Container $container)
     {
-        return $container->load(['card:id,destination,type,quantity']);
+        // return $container->load(['card:id,destination,type,quantity']);
+        return response()->json([
+            'container' => $container,
+            'card' => $container->card
+        ]);
     }
 
     /**
@@ -49,15 +53,17 @@ class ContainerController extends Controller
 
     public function getContainerDestinations(Request $request)
     {
-        $request->validate([
+        $validated = $request->validate([
             'containerIds' => 'required|array',
-            'containerIds.*' => 'exists:containers,id'
+            'containerIds.*' => 'exists:containers,id',
+            'deckId' => 'required|exists:decks,id'
         ]);
 
         $containerDestinations = [];
         $containers = Container::whereIn('id', $request->containerIds)
-            ->with('card:id,destination')
-            ->get(['id', 'card_id']);
+            ->where('deck_id', $request->deckId)
+            // ->with('card:id,destination,type,quantity')
+            ->get();
 
         foreach ($containers as $container) {
             if ($container->card) {

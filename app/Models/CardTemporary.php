@@ -15,7 +15,15 @@ class CardTemporary extends Model
         'card_id',
         'deck_id',
         'status',
-        'round'
+        'round',
+        'is_backlog',
+        'original_round'
+    ];
+
+    protected $casts = [
+        'is_backlog' => 'boolean',
+        'round' => 'integer',
+        'original_round' => 'integer'
     ];
 
     public function card()

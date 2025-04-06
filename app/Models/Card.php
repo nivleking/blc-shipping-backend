@@ -59,4 +59,10 @@ class Card extends Model
         return $this->hasMany(Container::class)
             ->where('deck_id', $this->deck_id);
     }
+
+    public function cardTemporaries()
+    {
+        return $this->hasMany(CardTemporary::class)
+            ->where('deck_id', $this->deck_id);
+    }
 }

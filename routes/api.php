@@ -128,7 +128,7 @@ Route::get('rooms/{room}/user-port2', [RoomController::class, 'getUserPortsV2'])
 Route::get('rooms/{room}/rankings', [RoomController::class, 'getUsersRanking'])->middleware('auth:sanctum');
 Route::put('rooms/{room}/swap-config', [RoomController::class, 'updateSwapConfig'])->middleware('auth:sanctum');
 
-Route::post('rooms/{room}/create-card-temporary/{user}', [RoomController::class, 'createCardTemporary'])->middleware('auth:sanctum', 'admin');
+// Route::post('rooms/{room}/create-card-temporary/{user}', [RoomController::class, 'createCardTemporary'])->middleware('auth:sanctum', 'admin');
 Route::get('card-temporary/{roomId}/{userId}', [RoomController::class, 'getCardTemporaries']);
 Route::post('card-temporary/accept', [RoomController::class, 'acceptCardTemporary'])->middleware('auth:sanctum');
 Route::post('card-temporary/reject', [RoomController::class, 'rejectCardTemporary'])->middleware('auth:sanctum');

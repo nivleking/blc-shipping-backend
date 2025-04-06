@@ -18,7 +18,9 @@ return new class extends Migration
             $table->string('card_id');
             $table->foreignId('deck_id');
             $table->string('status')->default('selected');
-            $table->integer('round')->default(1);
+            $table->integer('round')->nullable();
+            $table->boolean('is_backlog')->default(false);
+            $table->integer('original_round')->nullable();
             $table->timestamps();
             $table->foreign('room_id')->references('id')->on('rooms')->onDelete('cascade');
             $table->foreign(['card_id', 'deck_id'])->references(['id', 'deck_id'])->on('cards')->onDelete('cascade');

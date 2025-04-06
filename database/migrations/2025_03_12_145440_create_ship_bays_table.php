@@ -19,10 +19,12 @@ return new class extends Migration
             $table->string('port');
             $table->json('arena');
             $table->string('section')->default('section1');
+            $table->bigInteger('total_revenue')->default(0);
             $table->bigInteger('revenue')->default(0);
             $table->bigInteger('penalty')->default(0);
             $table->bigInteger('extra_moves_penalty')->default(0);
-            $table->bigInteger('total_revenue')->default(0);
+            $table->bigInteger('backlog_penalty')->default(0);
+            $table->json('backlog_containers')->nullable();
             $table->unsignedBigInteger('discharge_moves')->default(0);
             $table->unsignedBigInteger('load_moves')->default(0);
             $table->unsignedBigInteger('processed_cards')->default(0);

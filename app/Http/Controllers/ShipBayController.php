@@ -420,7 +420,6 @@ class ShipBayController extends Controller
         }
 
         $room = Room::find($roomId);
-        $bayCount = $room->bay_count;
 
         // Get moves data
         $bayMoves = json_decode($shipBay->bay_moves ?? '{}', true);
@@ -429,6 +428,7 @@ class ShipBayController extends Controller
         $idealCraneSplit = $room->ideal_crane_split ?? 2;
         $longCraneMoves = $shipBay->long_crane_moves;
         $extraMovesOnLongCrane = $shipBay->extra_moves_on_long_crane;
+        $backlogContainers = $shipBay->backlog_containers;
 
         return response()->json([
             'bay_moves' => $bayMoves,
@@ -437,7 +437,8 @@ class ShipBayController extends Controller
             'ideal_crane_split' => $idealCraneSplit,
             'ideal_average_moves_per_crane' => $totalMoves / $idealCraneSplit,
             'long_crane_moves' => $longCraneMoves,
-            'extra_moves_on_long_crane' => $extraMovesOnLongCrane
+            'extra_moves_on_long_crane' => $extraMovesOnLongCrane,
+            'backlog_containers' => $backlogContainers,
         ]);
     }
 

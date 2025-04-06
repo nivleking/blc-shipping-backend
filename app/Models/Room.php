@@ -29,6 +29,7 @@ class Room extends Model
         'total_rounds',
         'move_cost',
         'extra_moves_cost',
+        'backlog_penalty_per_container_cost',
         'ideal_crane_split',
         'cards_limit_per_round',
         'cards_must_process_per_round',

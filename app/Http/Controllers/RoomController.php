@@ -8,6 +8,7 @@ use App\Models\Container;
 use App\Models\Room;
 use App\Models\Deck;
 use App\Models\ShipBay;
+use App\Models\ShipDock;
 use App\Models\ShipLayout;
 use App\Models\User;
 use App\Utilities\UtilitiesHelper;
@@ -58,6 +59,7 @@ class RoomController extends Controller
             'move_cost' => 'required|integer|min:1',
             'extra_moves_cost' => 'required|integer|min:1',
             'ideal_crane_split' => 'required|integer|min:1',
+            'backlog_penalty_per_container_cost' => 'required|integer|min:1',
             'cards_limit_per_round' => 'required|integer|min:1',
             'cards_must_process_per_round' => 'required|integer|min:1',
             'swap_config' => 'required|nullable|array'
@@ -84,6 +86,7 @@ class RoomController extends Controller
                 'move_cost' => $validated['move_cost'],
                 'extra_moves_cost' => $validated['extra_moves_cost'],
                 'ideal_crane_split' => $validated['ideal_crane_split'],
+                'backlog_penalty_per_container_cost' => $validated['backlog_penalty_per_container_cost'],
                 'cards_limit_per_round' => $validated['cards_limit_per_round'],
                 'cards_must_process_per_round' => $validated['cards_must_process_per_round'],
                 'swap_config' => json_encode($validated['swap_config'] ?? [])
@@ -148,9 +151,11 @@ class RoomController extends Controller
             'description' => 'string',
             'total_rounds' => 'integer|min:1',
             'cards_limit_per_round' => 'integer|min:1',
+            'cards_must_process_per_round' => 'integer|min:1',
             'move_cost' => 'integer|min:1',
             'extra_moves_cost' => 'integer|min:1',
             'ideal_crane_split' => 'integer|min:1',
+            'backlog_penalty_per_container_cost' => 'integer|min:1',
             'assigned_users' => 'array',
             'assigned_users.*' => 'exists:users,id',
             'deck' => 'exists:decks,id',
@@ -165,6 +170,9 @@ class RoomController extends Controller
         if (isset($validated['move_cost'])) $room->move_cost = $validated['move_cost'];
         if (isset($validated['extra_moves_cost'])) $room->extra_moves_cost = $validated['extra_moves_cost'];
         if (isset($validated['ideal_crane_split'])) $room->ideal_crane_split = $validated['ideal_crane_split'];
+        if (isset($validated['backlog_penalty_per_container_cost'])) {
+            $room->backlog_penalty_per_container_cost = $validated['backlog_penalty_per_container_cost'];
+        }
 
         if (isset($validated['assigned_users'])) {
             $room->assigned_users = json_encode($validated['assigned_users']);
@@ -310,6 +318,31 @@ class RoomController extends Controller
             ->where('room_id', $room->id)
             ->get();
 
+        // Calculate backlog penalties containers / not loaded for each user
+        foreach ($userIds as $userId) {
+            $shipBay = ShipBay::where('room_id', $room->id)
+                ->where('user_id', $userId)
+                ->first();
+
+            // Calculate backlog penalties for containers sitting in dock
+            $backlogDetails = $this->calculateBacklogPenalty($room, $userId, $shipBay->current_round + 1);
+
+            // Add or update backlog penalty
+            if (!isset($shipBay->backlog_penalty)) {
+                $shipBay->backlog_penalty = 0;
+            }
+
+            $shipBay->backlog_penalty += $backlogDetails['penalty'];
+            $shipBay->backlog_containers = $backlogDetails['backlog_containers'];
+
+            $shipBay->penalty += $shipBay->backlog_penalty;
+
+            // Update total revenue calculation (subtract penalties)
+            $shipBay->total_revenue = ($shipBay->revenue ?? 0) - ($shipBay->penalty ?? 0);
+
+            $shipBay->save();
+        }
+
         // Get the swap configuration
         $swapConfig = json_decode($room->swap_config, true);
 
@@ -371,7 +404,146 @@ class RoomController extends Controller
                 'section' => 'section1' // Reset section
             ]);
 
-        return response()->json(['message' => 'Bays swapped successfully']);
+        // After increment round, get the new round
+        $newRound = ShipBay::where('room_id', $room->id)->first()->current_round;
+
+        // Get the cards_limit_per_round setting
+        $cardsLimitPerRound = $room->cards_limit_per_round;
+
+        // For each user, assign new cards for the next round
+        foreach ($userIds as $userId) {
+            // Find unassigned cards for this user (where round is NULL)
+            $unassignedCardIds = CardTemporary::where([
+                'user_id' => $userId,
+                'room_id' => $room->id,
+                'status' => 'selected',
+            ])
+                ->whereNull('round')
+                ->orderByRaw('CAST(card_id AS UNSIGNED) ASC')
+                ->limit($cardsLimitPerRound)
+                ->pluck('id')
+                ->toArray();
+
+            // Bulk update the round field for the selected cards
+            if (!empty($unassignedCardIds)) {
+                CardTemporary::whereIn('id', $unassignedCardIds)
+                    ->update(['round' => $newRound]);
+            }
+        }
+
+        // Process unhandled sales calls / unhandled committed cards
+        $unhandledCards = [];
+        foreach ($userIds as $userId) {
+            // Find committed cards from previous round that weren't processed
+            $userUnhandledCards = CardTemporary::join('cards', function ($join) {
+                $join->on('cards.id', '=', 'card_temporaries.card_id')
+                    ->on('cards.deck_id', '=', 'card_temporaries.deck_id');
+            })
+                ->where([
+                    'card_temporaries.user_id' => $userId,
+                    'card_temporaries.room_id' => $room->id,
+                    'card_temporaries.status' => 'selected',
+                ])
+                ->where('card_temporaries.round', '<', $newRound)
+                ->where('cards.priority', 'Committed')
+                ->select('card_temporaries.*')
+                ->get();
+
+            // Mark these cards as backlog and keep them in the current round
+            foreach ($userUnhandledCards as $card) {
+                $card->is_backlog = true;
+                $card->original_round = $card->round;
+                $card->round = $newRound; // Move to current round
+                $card->save();
+            }
+
+            $unhandledCards = array_merge($unhandledCards, $userUnhandledCards->toArray());
+        }
+
+        return response()->json([
+            'message' => 'Bays swapped successfully',
+            'unhandledCards' => $unhandledCards
+        ]);
+    }
+
+    private function calculateBacklogPenalty($room, $userId, $currentRound)
+    {
+        // Get ship dock to find containers that weren't moved
+        $shipDock = ShipDock::where('room_id', $room->id)
+            ->where('user_id', $userId)
+            ->first();
+
+        if (!$shipDock) {
+            return ['penalty' => 0, 'backlog_containers' => []];
+        }
+
+        // Parse arena data to get containers in dock
+        $arenaData = json_decode($shipDock->arena, true);
+        $dockContainers = isset($arenaData['containers']) ? $arenaData['containers'] : [];
+
+        if (empty($dockContainers)) {
+            return ['penalty' => 0, 'backlog_containers' => []];
+        }
+
+        // Build container ID list
+        $containerIds = array_map(function ($container) {
+            return $container['id'];
+        }, $dockContainers);
+
+        // Get all accepted card temporaries for previous rounds
+        $cardTemporaries = CardTemporary::where('user_id', $userId)
+            ->where('room_id', $room->id)
+            ->where('status', 'accepted')
+            ->where('round', '<', $currentRound) // Only previous rounds
+            ->with(['card' => function ($query) {
+                $query->select('id', 'deck_id'); // Get only necessary fields
+            }])
+            ->get();
+
+        // Get containers from these card temporaries
+        $acceptedCardIds = $cardTemporaries->pluck('card_id')->toArray();
+        $acceptedDeckIds = $cardTemporaries->pluck('deck_id')->toArray();
+
+        // Match containers with accepted cards
+        $backlogContainers = [];
+        $totalPenalty = 0;
+
+        foreach ($containerIds as $containerId) {
+            $container = Container::find($containerId);
+            if (!$container) continue;
+
+            // Check if this container belongs to an accepted card
+            $cardTemp = CardTemporary::where('room_id', $room->id)
+                ->where('user_id', $userId)
+                ->where('card_id', $container->card_id)
+                ->where('deck_id', $container->deck_id)
+                ->where('status', 'accepted')
+                ->where('round', '<', $currentRound) // Only previous rounds
+                ->first();
+
+            if ($cardTemp) {
+                // Calculate weeks the container has been sitting in dock
+                $weeksPending = $currentRound - $cardTemp->round;
+
+                if ($weeksPending > 0) {
+                    $penalty = $weeksPending * $room->backlog_penalty_per_container_cost;
+                    $totalPenalty += $penalty;
+
+                    $backlogContainers[] = [
+                        'container_id' => $containerId,
+                        'card_id' => $container->card_id,
+                        'round_accepted' => $cardTemp->round,
+                        'weeks_pending' => $weeksPending,
+                        'penalty' => $penalty
+                    ];
+                }
+            }
+        }
+
+        return [
+            'penalty' => $totalPenalty,
+            'backlog_containers' => $backlogContainers
+        ];
     }
 
     public function swapBaysCustom(Request $request, Room $room)
@@ -888,10 +1060,76 @@ class RoomController extends Controller
 
     public function getCardTemporaries($roomId, $userId)
     {
-        return CardTemporary::where('room_id', $roomId)
+        $shipBay = ShipBay::where('room_id', $roomId)
             ->where('user_id', $userId)
-            ->with('card')
+            ->first();
+
+        $currentRound = $shipBay->current_round;
+
+        // Use a direct join instead of relationship loading
+        $cardTemporaries = CardTemporary::select(
+            'card_temporaries.*',
+            'cards.type',
+            'cards.priority',
+            'cards.origin',
+            'cards.destination',
+            'cards.quantity',
+            'cards.revenue'
+        )
+            ->join('cards', function ($join) {
+                $join->on('cards.id', '=', 'card_temporaries.card_id')
+                    ->on('cards.deck_id', '=', 'card_temporaries.deck_id');
+            })
+            ->where([
+                'card_temporaries.room_id' => $roomId,
+                'card_temporaries.user_id' => $userId,
+                'card_temporaries.status' => 'selected',
+            ])
+            ->where(function ($query) use ($currentRound) {
+                $query->where('card_temporaries.round', $currentRound)
+                    ->orWhere('card_temporaries.is_backlog', true);
+            })
+            ->orderByRaw('card_temporaries.is_backlog DESC')
+            ->orderByRaw("CASE WHEN cards.priority = 'Committed' THEN 1 ELSE 2 END")
+            // ->orderByRaw("CAST(card_temporaries.card_id AS UNSIGNED) ASC")
             ->get();
+
+        // Format the result to match what the frontend expects
+        $formattedResult = $cardTemporaries->map(function ($temp) {
+            // Create a card property with the joined data
+            $temp->card = [
+                'id' => $temp->card_id,
+                'deck_id' => $temp->deck_id,
+                'type' => $temp->type,
+                'priority' => $temp->priority,
+                'origin' => $temp->origin,
+                'destination' => $temp->destination,
+                'quantity' => $temp->quantity,
+                'revenue' => $temp->revenue
+            ];
+
+            // Remove duplicated attributes
+            unset($temp->type);
+            unset($temp->priority);
+            unset($temp->origin);
+            unset($temp->destination);
+            unset($temp->quantity);
+            unset($temp->revenue);
+
+            return $temp;
+        });
+
+        $room = Room::find($roomId);
+
+        // Get first card limit cards from formattedResult
+        $cardsLimit = $room->cards_limit_per_round;
+        if ($formattedResult->count() > $cardsLimit) {
+            $formattedResult = $formattedResult->take($cardsLimit);
+        }
+
+        return response()->json([
+            "cards" => $formattedResult,
+        ]);
     }
 
     public function acceptCardTemporary(Request $request)
@@ -899,17 +1137,15 @@ class RoomController extends Controller
         $validated = $request->validate([
             'room_id' => 'required|exists:rooms,id',
             'card_temporary_id' => 'required|exists:cards,id',
-            'round' => 'sometimes|integer|min:1',
+            'round' => 'required|integer|min:1',
         ]);
+
         $cardTemporary = CardTemporary::where('card_id', $validated['card_temporary_id'])
             ->where('room_id', $validated['room_id'])
             ->first();
+
         $cardTemporary->status = 'accepted';
-
-        if (isset($validatedData['round'])) {
-            $cardTemporary->round = $validatedData['round'];
-        }
-
+        $cardTemporary->round = $validated['round'];
         $cardTemporary->save();
 
         return response()->json(['message' => 'Sales call card accepted.']);
@@ -920,17 +1156,15 @@ class RoomController extends Controller
         $validated = $request->validate([
             'room_id' => 'required|exists:rooms,id',
             'card_temporary_id' => 'required|exists:cards,id',
-            'round' => 'sometimes|integer|min:1',
+            'round' => 'required|integer|min:1',
         ]);
+
         $cardTemporary = CardTemporary::where('card_id', $validated['card_temporary_id'])
             ->where('room_id', $validated['room_id'])
             ->first();
+
         $cardTemporary->status = 'rejected';
-
-        if (isset($validatedData['round'])) {
-            $cardTemporary->round = $validatedData['round'];
-        }
-
+        $cardTemporary->round = $validated['round'];
         $cardTemporary->save();
 
         return response()->json(['message' => 'Sales call card rejected.']);
@@ -953,6 +1187,7 @@ class RoomController extends Controller
                     'revenue' => $shipBay->revenue,
                     'penalty' => $shipBay->penalty,
                     'extra_moves_penalty' => $shipBay->extra_moves_penalty,
+                    'backlog_penalty' => $shipBay->backlog_penalty,
                     'total_revenue' => $shipBay->total_revenue,
                     'discharge_moves' => $shipBay->discharge_moves,
                     'load_moves' => $shipBay->load_moves,

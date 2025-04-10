@@ -13,7 +13,19 @@ class Deck extends Model
 
     public function cards()
     {
+        return $this->hasMany(Card::class)
+            ->where('is_initial', false)
+            ->orderByRaw('LEFT(id, 1) ASC');
+    }
+
+    public function allCards()
+    {
         return $this->hasMany(Card::class);
+    }
+
+    public function initialCards()
+    {
+        return $this->hasMany(Card::class)->where('is_initial', true);
     }
 
     public function marketIntelligence()

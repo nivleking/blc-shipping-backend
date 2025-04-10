@@ -317,7 +317,7 @@ class CardController extends Controller
 
         $dataRows = array_slice($rows, 11);
 
-        $validPorts = ["SBY", "MDN", "MKS", "JYP", "BPN", "BKS", "BGR", "BTH"];
+        $validPorts = ["SBY", "MDN", "MKS", "JYP", "BPN", "BKS", "BGR", "BTH", "AMQ", "SMR"];
         $createdCards = [];
         $errors = [];
 

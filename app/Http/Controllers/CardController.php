@@ -72,64 +72,117 @@ class CardController extends Controller
     {
         $validated = $request->validate([
             'deck_id' => 'required|exists:decks,id',
-            'type' => 'string',
-            'priority' => 'string',
+            'type' => 'string|in:dry,reefer',
+            'priority' => 'string|in:Committed,Non-Committed',
             'origin' => 'string',
             'destination' => 'string',
-            'quantity' => 'integer',
-            'revenue' => 'integer',
+            'quantity' => 'integer|min:1',
+            'revenue' => 'integer|min:0',
         ]);
 
-        $card = Card::where('id', $card->id)
-            ->where('deck_id', $validated['deck_id'])
-            ->firstOrFail();
+        DB::beginTransaction();
+        try {
+            // First, explicitly find the card with both keys to ensure we have the right one
+            $specificCard = DB::table('cards')
+                ->where('id', $card->id)
+                ->where('deck_id', $validated['deck_id'])
+                ->first();
 
-        // Store the old values for comparison
-        $oldType = $card->type;
-        $oldDestination = $card->destination;
-        $oldQuantity = $card->quantity;
-
-        // Update the card
-        $card->update($validated);
-
-        // If destination has changed, update all container colors
-        if (isset($validated['destination']) && $oldDestination !== $validated['destination']) {
-            // Get the new color based on the destination
-            $newColor = $this->generateContainerColor($validated['destination']);
-
-            // Update all containers associated with this card
-            $card->containers()->update(['color' => $newColor]);
-        }
-
-        // If type has changed, update all containers
-        if (isset($validated['type']) && $oldType !== $validated['type']) {
-            $card->containers()->update(['type' => $validated['type']]);
-        }
-
-        // Handle quantity changes (add or remove containers as needed)
-        if (isset($validated['quantity']) && $oldQuantity !== $validated['quantity']) {
-            if ($validated['quantity'] > $oldQuantity) {
-                // Add new containers
-                $containersToAdd = $validated['quantity'] - $oldQuantity;
-                $containerType = $card->type;
-                $containerColor = $this->generateContainerColor($card->destination);
-
-                for ($i = 0; $i < $containersToAdd; $i++) {
-                    $card->containers()->create([
-                        'type' => $containerType,
-                        'color' => $containerColor,
-                        'deck_id' => $card->deck_id,
-                    ]);
-                }
-            } else if ($validated['quantity'] < $oldQuantity) {
-                // Remove excess containers
-                $containersToRemove = $oldQuantity - $validated['quantity'];
-                $card->containers()->latest()->take($containersToRemove)->delete();
+            if (!$specificCard) {
+                return response()->json([
+                    'message' => 'Card not found in this deck'
+                ], 404);
             }
-        }
 
-        // Return the updated card with its containers
-        return response()->json($card->load('containers'), 200);
+            // Store old values before update
+            $oldType = $specificCard->type;
+            $oldDestination = $specificCard->destination;
+            $oldQuantity = $specificCard->quantity;
+            $newQuantity = $validated['quantity'] ?? $oldQuantity;
+            $cardType = $validated['type'] ?? $oldType;
+            $destination = $validated['destination'] ?? $oldDestination;
+
+            // Manually update with both keys in the WHERE clause
+            DB::table('cards')
+                ->where('id', $card->id)
+                ->where('deck_id', $validated['deck_id'])
+                ->update([
+                    'type' => $cardType,
+                    'priority' => $validated['priority'] ?? $specificCard->priority,
+                    'origin' => $validated['origin'] ?? $specificCard->origin,
+                    'destination' => $destination,
+                    'quantity' => $newQuantity,
+                    'revenue' => $validated['revenue'] ?? $specificCard->revenue
+                ]);
+
+            // Update existing containers if destination or type changed
+            if ((isset($validated['destination']) && $oldDestination !== $destination) ||
+                (isset($validated['type']) && $oldType !== $cardType)
+            ) {
+
+                $newColor = $this->generateContainerColor($destination);
+
+                DB::table('containers')
+                    ->where('card_id', $card->id)
+                    ->where('deck_id', $validated['deck_id'])
+                    ->update([
+                        'color' => $newColor,
+                        'type' => $cardType
+                    ]);
+            }
+
+            // Handle quantity changes
+            if ($newQuantity != $oldQuantity) {
+                // Get current container count
+                $currentContainerCount = DB::table('containers')
+                    ->where('card_id', $card->id)
+                    ->where('deck_id', $validated['deck_id'])
+                    ->count();
+
+                if ($newQuantity > $currentContainerCount) {
+                    // Create additional containers if quantity increased
+                    $cardObj = Card::findByKeys($card->id, $validated['deck_id']);
+                    $containersToAdd = $newQuantity - $currentContainerCount;
+
+                    for ($i = 0; $i < $containersToAdd; $i++) {
+                        $color = $this->generateContainerColor($destination);
+                        $cardObj->containers()->create([
+                            'color' => $color,
+                            'type' => $cardType,
+                            'deck_id' => $validated['deck_id'],
+                        ]);
+                    }
+                } elseif ($newQuantity < $currentContainerCount) {
+                    // Delete excess containers if quantity decreased
+                    $containersToRemove = $currentContainerCount - $newQuantity;
+
+                    // Get container IDs to remove
+                    $containerIds = DB::table('containers')
+                        ->where('card_id', $card->id)
+                        ->where('deck_id', $validated['deck_id'])
+                        ->orderBy('id', 'desc')
+                        ->limit($containersToRemove)
+                        ->pluck('id');
+
+                    // Delete the containers
+                    DB::table('containers')
+                        ->whereIn('id', $containerIds)
+                        ->delete();
+                }
+            }
+
+            DB::commit();
+
+            // Return the updated card
+            $updatedCard = Card::findByKeys($card->id, $validated['deck_id']);
+            return response()->json($updatedCard->load('containers'), 200);
+        } catch (\Exception $e) {
+            DB::rollback();
+            return response()->json([
+                'message' => 'Error updating card',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     public function destroy(Request $request, Card $card)

@@ -127,6 +127,8 @@ Route::get('rooms/{room}/user-port', [RoomController::class, 'getUserPortsV1'])-
 Route::get('rooms/{room}/user-port2', [RoomController::class, 'getUserPortsV2'])->middleware('auth:sanctum');
 Route::get('rooms/{room}/rankings', [RoomController::class, 'getUsersRanking'])->middleware('auth:sanctum');
 Route::put('rooms/{room}/swap-config', [RoomController::class, 'updateSwapConfig'])->middleware('auth:sanctum');
+Route::get('rooms/{roomId}/port-sequence/{port}', [RoomController::class, 'getProperStackingOrder']);
+Route::get('rooms/{roomId}/restowage-status', [RoomController::class, 'getRestowageStatus'])->middleware('auth:sanctum');
 
 // Route::post('rooms/{room}/create-card-temporary/{user}', [RoomController::class, 'createCardTemporary'])->middleware('auth:sanctum', 'admin');
 Route::get('card-temporary/{roomId}/{userId}', [RoomController::class, 'getCardTemporaries']);

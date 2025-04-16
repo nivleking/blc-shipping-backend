@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\CapacityUptake;
 use App\Models\Card;
 use App\Models\CardTemporary;
 use App\Models\Container;
 use App\Models\Room;
 use App\Models\Deck;
+use App\Models\MarketIntelligence;
 use App\Models\ShipBay;
 use App\Models\ShipDock;
 use App\Models\ShipLayout;
@@ -117,6 +119,19 @@ class RoomController extends Controller
                     ->get();
 
                 foreach ($shipBays as $bay) {
+                    CapacityUptake::updateOrCreate(
+                        [
+                            'user_id' => $bay->user_id,
+                            'room_id' => $room->id,
+                            'week' => $bay->current_round,
+                            'port' => $bay->port
+                        ],
+                        [
+                            'arena_end' => $bay->arena
+                        ]
+                    );
+
+                    // Existing code for bay_statistics_history
                     $existingRecord = DB::table('bay_statistics_history')
                         ->where('user_id', $bay->user_id)
                         ->where('room_id', $bay->room_id)
@@ -306,9 +321,265 @@ class RoomController extends Controller
         return response()->json($room);
     }
 
+    private function calculateRestowagePenalties($room, $userId)
+    {
+        $shipBay = ShipBay::where('room_id', $room->id)
+            ->where('user_id', $userId)
+            ->first();
+
+        if (!$shipBay) {
+            return ['penalty' => 0, 'moves' => 0, 'containers' => []];
+        }
+
+        // Get the port sequence from swap configuration
+        $swapConfig = json_decode($room->swap_config, true);
+        if (empty($swapConfig)) {
+            return ['penalty' => 0, 'moves' => 0, 'containers' => []];
+        }
+
+        // Get the current port
+        $currentPort = $shipBay->port;
+
+        // Build the port sequence starting from current port
+        $portSequence = [];
+        $nextPort = $currentPort;
+        $visited = [$currentPort => true];
+
+        while (isset($swapConfig[$nextPort]) && !isset($visited[$swapConfig[$nextPort]])) {
+            $nextPort = $swapConfig[$nextPort];
+            $portSequence[] = $nextPort;
+            $visited[$nextPort] = true;
+        }
+
+        // Get all containers in the bay
+        $arena = is_array($shipBay->arena) ? $shipBay->arena : json_decode($shipBay->arena, true);
+        if (!isset($arena['containers']) || empty($arena['containers'])) {
+            return ['penalty' => 0, 'moves' => 0, 'containers' => []];
+        }
+
+        // Group containers by stack
+        $stacks = [];
+        foreach ($arena['containers'] as $container) {
+            if (!isset($container['bay']) || !isset($container['row']) || !isset($container['col']) || !isset($container['id'])) {
+                continue;
+            }
+
+            $stackKey = $container['bay'] . '-' . $container['col'];
+            if (!isset($stacks[$stackKey])) {
+                $stacks[$stackKey] = [];
+            }
+
+            $containerObj = Container::where('id', $container['id'])
+                ->where('deck_id', $room->deck_id)
+                ->first();
+            if ($containerObj && $containerObj->card) {
+                $destination = $containerObj->card->destination;
+
+                $stacks[$stackKey][] = [
+                    'id' => $container['id'],
+                    'row' => $container['row'],
+                    'destination' => $destination,
+                    'position' => $container['bay'] * 1000 + $container['row'] * 100 + $container['col']
+                ];
+            }
+        }
+
+        // Calculate port priority - lower number means earlier port visit
+        $portPriority = [];
+        foreach ($portSequence as $index => $port) {
+            $portPriority[$port] = $index;
+        }
+
+        $restowageContainers = [];
+        $moveDetails = [];
+
+        // Track unique containers that need to be moved at each port
+        $containersToMoveByStack = [];
+
+        foreach ($stacks as $stackKey => $containers) {
+            // Sort containers by row (top to bottom)
+            usort($containers, function ($a, $b) {
+                return $a['row'] - $b['row'];
+            });
+
+            // Initialize container tracking for this stack
+            $containersToMoveByStack[$stackKey] = [];
+
+            // Check each container from bottom to top for stacking violations
+            for ($j = count($containers) - 1; $j >= 0; $j--) {
+                $targetContainer = $containers[$j];
+                $targetDestination = $targetContainer['destination'];
+
+                // Skip if destination is unknown or current port
+                if (!$targetDestination || $targetDestination === $currentPort) {
+                    continue;
+                }
+
+                // Skip if destination is not in our port sequence
+                if (!isset($portPriority[$targetDestination])) {
+                    continue;
+                }
+
+                // Check for containers above that need to be moved
+                $blockingContainers = [];
+
+                for ($i = 0; $i < $j; $i++) {
+                    $topContainer = $containers[$i];
+                    $topDestination = $topContainer['destination'];
+
+                    if (!$topDestination || $topDestination === $currentPort) {
+                        continue;
+                    }
+
+                    if (!isset($portPriority[$topDestination])) {
+                        continue;
+                    }
+
+                    // If top container's port visit is LATER than target container's
+                    if ($portPriority[$targetDestination] < $portPriority[$topDestination]) {
+                        $blockingContainers[] = $topContainer;
+
+                        // Track this container as needing to be moved
+                        $containersToMoveByStack[$stackKey][$topContainer['id']] = $topContainer;
+                    }
+                }
+
+                if (!empty($blockingContainers)) {
+                    $isNextPort = ($targetDestination === $portSequence[0]);
+
+                    // Store the violation details
+                    $moveDetails[] = [
+                        'stack' => $stackKey,
+                        'blockedContainer' => $targetContainer,
+                        'blockedDestination' => $targetDestination,
+                        'isNextPort' => $isNextPort,
+                        'blockingContainers' => $blockingContainers,
+                        'blockingDestinations' => array_map(function ($c) {
+                            return $c['destination'];
+                        }, $blockingContainers)
+                    ];
+
+                    // Create entries for each blocking container
+                    foreach ($blockingContainers as $blockingContainer) {
+                        $restowageContainers[] = [
+                            'container_id' => $targetContainer['id'],
+                            'blocking_container_id' => $blockingContainer['id'],
+                            'destination' => $targetDestination,
+                            'blocking_destination' => $blockingContainer['destination'],
+                            'is_next_port' => $isNextPort,
+                            'stack' => $stackKey
+                        ];
+                    }
+                }
+            }
+        }
+
+        // Calculate total unique containers that need to be moved
+        $totalContainersToMove = 0;
+        foreach ($containersToMoveByStack as $stackContainers) {
+            $totalContainersToMove += count($stackContainers);
+        }
+
+        // Calculate total moves (each container = 2 moves)
+        $restowageMoves = $totalContainersToMove * 2;
+
+        // Calculate penalty based on move cost
+        $moveCost = $room->extra_moves_cost ?? $room->move_cost ?? 50000;
+        $restowagePenalty = $restowageMoves * $moveCost;
+
+        // Add moves_required to each container entry
+        foreach ($restowageContainers as &$container) {
+            $container['moves_required'] = 2; // Each container requires 2 moves
+        }
+
+        return [
+            'penalty' => $restowagePenalty,
+            'moves' => $restowageMoves,
+            'containers' => $restowageContainers,
+            'move_details' => $moveDetails,
+            'unique_containers_to_move' => $totalContainersToMove
+        ];
+    }
+
+    // New endpoint to get stacking order
+    public function getProperStackingOrder($roomId, $port)
+    {
+        $room = Room::find($roomId);
+        if (!$room) {
+            return response()->json(['error' => 'Room not found'], 404);
+        }
+
+        $swapConfig = json_decode($room->swap_config, true);
+        if (empty($swapConfig)) {
+            return response()->json(['error' => 'Swap configuration not found'], 404);
+        }
+
+        // Build the port sequence starting from current port
+        $portSequence = [];
+        $nextPort = $port;
+        $visited = [$port => true];
+
+        // Prevent infinite loops due to circular references
+        while (isset($swapConfig[$nextPort]) && !isset($visited[$swapConfig[$nextPort]])) {
+            $nextPort = $swapConfig[$nextPort];
+            $portSequence[] = $nextPort;
+            $visited[$nextPort] = true;
+        }
+
+        return response()->json([
+            'current_port' => $port,
+            'recommended_stacking_order' => ($portSequence) // Bottom to top
+        ]);
+    }
+
+    public function getRestowageStatus(Request $request, $roomId)
+    {
+        $userId = $request->user()->id;
+        $room = Room::find($roomId);
+
+        if (!$room) {
+            return response()->json(['error' => 'Room not found'], 404);
+        }
+
+        $shipBay = ShipBay::where('room_id', $roomId)
+            ->where('user_id', $userId)
+            ->first();
+
+        if (!$shipBay) {
+            return response()->json([
+                'restowage_containers' => [],
+                'restowage_moves' => 0,
+                'restowage_penalty' => 0
+            ]);
+        }
+
+        // On-demand calculation for current status
+        $restowageDetails = $this->calculateRestowagePenalties($room, $userId);
+
+        return response()->json([
+            'restowage_containers' => $restowageDetails['containers'],
+            'restowage_moves' => $restowageDetails['moves'],
+            'restowage_penalty' => $restowageDetails['penalty'],
+            'move_details' => $restowageDetails['move_details']
+        ]);
+    }
+
     public function swapBays(Request $request, Room $room)
     {
         $userIds = json_decode($room->users, true);
+
+        $swapConfig = json_decode($room->swap_config, true);
+
+        // Create port-to-user mapping for easier lookup
+        $portToUserMap = [];
+        foreach ($userIds as $userId) {
+            $shipBay = ShipBay::where('room_id', $room->id)
+                ->where('user_id', $userId)
+                ->first();
+            if ($shipBay) {
+                $portToUserMap[$shipBay->port] = $userId;
+            }
+        }
 
         if (count($userIds) < 2) {
             return response()->json(['message' => 'Not enough users to swap bays'], 400);
@@ -318,14 +589,34 @@ class RoomController extends Controller
             ->where('room_id', $room->id)
             ->get();
 
+        $movedContainers = [];
         // Calculate backlog penalties containers / not loaded for each user
         foreach ($userIds as $userId) {
             $shipBay = ShipBay::where('room_id', $room->id)
                 ->where('user_id', $userId)
                 ->first();
 
+            $shipDock = ShipDock::where('room_id', $room->id)
+                ->where('user_id', $userId)
+                ->first();
+
+            CapacityUptake::updateOrCreate(
+                [
+                    'user_id' => $userId,
+                    'room_id' => $room->id,
+                    'week' => $shipBay->current_round,
+                    'port' => $shipBay->port
+                ],
+                [
+                    'arena_end' => $shipBay->arena
+                ]
+            );
+
             // Calculate backlog penalties for containers sitting in dock
             $backlogDetails = $this->calculateBacklogPenalty($room, $userId, $shipBay->current_round + 1);
+
+            // Calculate restowage penalties
+            $restowageDetails = $this->calculateRestowagePenalties($room, $userId);
 
             // Add or update backlog penalty
             if (!isset($shipBay->backlog_penalty)) {
@@ -335,11 +626,117 @@ class RoomController extends Controller
             $shipBay->backlog_penalty += $backlogDetails['penalty'];
             $shipBay->backlog_containers = $backlogDetails['backlog_containers'];
 
-            $shipBay->penalty += $shipBay->backlog_penalty;
+            // Add or update restowage penalty
+            if (!isset($shipBay->restowage_penalty)) {
+                $shipBay->restowage_penalty = 0;
+            }
+
+            $shipBay->restowage_penalty += $restowageDetails['penalty'];
+            $shipBay->restowage_moves += $restowageDetails['moves'];
+            $shipBay->restowage_containers = $restowageDetails['containers'];
+
+            // Update total penalty
+            $shipBay->penalty = ($shipBay->backlog_penalty ?? 0) + ($shipBay->restowage_penalty ?? 0);
 
             // Update total revenue calculation (subtract penalties)
             $shipBay->total_revenue = ($shipBay->revenue ?? 0) - ($shipBay->penalty ?? 0);
 
+            // Get restow containers that need to be moved
+            $restowageContainers = $restowageDetails['containers'];
+            if (!empty($restowageContainers)) {
+                $bayArena = is_array($shipBay->arena) ? $shipBay->arena : json_decode($shipBay->arena, true);
+
+                // Get current port and determine next port from swap config
+                $currentPort = $shipBay->port;
+                $nextPort = $swapConfig[$currentPort] ?? null;
+
+                if (!$nextPort) continue;
+
+                // Get the user ID of the next port
+                $nextUserId = $portToUserMap[$nextPort] ?? null;
+                if (!$nextUserId) continue;
+
+                // Get or create dock for NEXT port's user
+                $nextUserDock = ShipDock::firstOrNew([
+                    'room_id' => $room->id,
+                    'user_id' => $nextUserId
+                ]);
+
+                if (!$nextUserDock->exists) {
+                    $nextUserDock->port = $nextPort;
+                    $nextUserDock->dock_size = json_encode($room->bay_size);
+                    $nextUserDock->arena = json_encode(['containers' => [], 'totalContainers' => 0]);
+                }
+
+                // Process dock arena of next user
+                $dockArena = is_array($nextUserDock->arena)
+                    ? $nextUserDock->arena
+                    : json_decode($nextUserDock->arena, true);
+
+                if (!isset($dockArena['containers'])) {
+                    $dockArena = ['containers' => [], 'totalContainers' => 0];
+                }
+
+                // Only identify blocking containers to be moved
+                $blockingContainerIds = [];
+                foreach ($restowageContainers as $container) {
+                    if (isset($container['blocking_container_id'])) {
+                        $blockingContainerIds[] = $container['blocking_container_id'];
+                    }
+                }
+
+                $blockingContainerIds = array_unique($blockingContainerIds);
+
+                // Move containers from current user's bay to next user's dock
+                $containersToMove = [];
+                $newBayContainers = [];
+
+                foreach ($bayArena['containers'] as $container) {
+                    if (in_array($container['id'], $blockingContainerIds)) {
+                        $container['is_restowed'] = true;
+                        $containersToMove[] = $container;
+                    } else {
+                        $newBayContainers[] = $container;
+                    }
+                }
+
+                // Update current user's bay
+                $bayArena['containers'] = $newBayContainers;
+                $bayArena['totalContainers'] = count($newBayContainers);
+
+                $bayArena = $this->applyGravityToStacks($bayArena);
+                $shipBay->arena = json_encode($bayArena);
+
+                // Add containers to next user's dock
+                $nextPosition = 0;
+                if (!empty($dockArena['containers'])) {
+                    foreach ($dockArena['containers'] as $dockContainer) {
+                        if (isset($dockContainer['position']) && $dockContainer['position'] > $nextPosition) {
+                            $nextPosition = $dockContainer['position'];
+                        }
+                    }
+                    $nextPosition += 1;
+                }
+
+                foreach ($containersToMove as $container) {
+                    $container['position'] = $nextPosition++;
+                    $container['area'] = 'docks-' . $container['position'];
+                    $dockArena['containers'][] = $container;
+
+                    $movedContainers[] = [
+                        'container_id' => $container['id'],
+                        'from_user_id' => $userId,
+                        'from_port' => $currentPort,
+                        'to_user_id' => $nextUserId,
+                        'to_port' => $nextPort,
+                        'reason' => 'blocking_container'
+                    ];
+                }
+
+                $dockArena['totalContainers'] = count($dockArena['containers']);
+                $nextUserDock->arena = json_encode($dockArena);
+                $nextUserDock->save();
+            }
             $shipBay->save();
         }
 
@@ -349,10 +746,6 @@ class RoomController extends Controller
         if (empty($swapConfig)) {
             return response()->json(['message' => 'No swap configuration found'], 400);
         }
-
-        // Create maps for lookup
-        $baysByPort = [];
-        $originalArenas = [];
 
         // Before incrementing current_round in swapBays method
         foreach ($shipBays as $bay) {
@@ -367,6 +760,8 @@ class RoomController extends Controller
                 'bay_moves' => $bay->bay_moves,
                 'long_crane_moves' => $bay->long_crane_moves,
                 'extra_moves_on_long_crane' => $bay->extra_moves_on_long_crane,
+                'restowage_moves' => $bay->restowage_moves ?? 0,
+                'restowage_penalty' => $bay->restowage_penalty ?? 0,
                 'created_at' => now(),
                 'updated_at' => now()
             ]);
@@ -378,8 +773,19 @@ class RoomController extends Controller
             $bay->bay_moves = json_encode([]);
             $bay->long_crane_moves = 0;
             $bay->extra_moves_on_long_crane = 0;
+            $bay->restowage_moves = 0;
+            $bay->restowage_containers = null;
             $bay->save();
         }
+
+        // Now reload the bays to get the updated arenas (with restowage containers removed)
+        $shipBays = ShipBay::whereIn('user_id', $userIds)
+            ->where('room_id', $room->id)
+            ->get();
+
+        // Create maps for lookup
+        $baysByPort = [];
+        $originalArenas = [];
 
         foreach ($shipBays as $bay) {
             $baysByPort[$bay->port] = $bay;
@@ -460,10 +866,94 @@ class RoomController extends Controller
             $unhandledCards = array_merge($unhandledCards, $userUnhandledCards->toArray());
         }
 
+        foreach ($userIds as $userId) {
+            $shipBay = ShipBay::where('room_id', $room->id)
+                ->where('user_id', $userId)
+                ->first();
+
+            // Create capacity uptake for new round
+            CapacityUptake::updateOrCreate(
+                [
+                    'user_id' => $userId,
+                    'room_id' => $room->id,
+                    'week' => $newRound,
+                    'port' => $shipBay->port
+                ],
+                [
+                    'arena_start' => $shipBay->arena,
+                    'arena_end' => null
+                ]
+            );
+        }
+
         return response()->json([
             'message' => 'Bays swapped successfully',
-            'unhandledCards' => $unhandledCards
+            'movedRestowageContainers' => $movedContainers
         ]);
+    }
+
+    // Add this function after moveRestowageContainers
+    private function applyGravityToStacks($arena)
+    {
+        if (!isset($arena['containers']) || empty($arena['containers'])) {
+            return $arena;
+        }
+
+        // Group containers by bay-column (stack)
+        $stacks = [];
+        foreach ($arena['containers'] as $container) {
+            if (!isset($container['bay']) || !isset($container['row']) || !isset($container['col'])) {
+                continue;
+            }
+
+            $stackKey = $container['bay'] . '-' . $container['col'];
+            if (!isset($stacks[$stackKey])) {
+                $stacks[$stackKey] = [];
+            }
+
+            $stacks[$stackKey][] = $container;
+        }
+
+        // Apply gravity to each stack
+        $updatedContainers = [];
+        foreach ($stacks as $stackKey => $containers) {
+            // Sort by row (top to bottom)
+            usort($containers, function ($a, $b) {
+                return $a['row'] - $b['row'];
+            });
+
+            // Count containers in this stack
+            $containerCount = count($containers);
+
+            // Get bay and column from stack key
+            list($bay, $col) = explode('-', $stackKey);
+            $bay = (int)$bay;
+            $col = (int)$col;
+
+            // Reposition containers from bottom up (no gaps)
+            $maxRow = 0; // Track the highest row we've seen
+            for ($i = 0; $i < $containerCount; $i++) {
+                $container = $containers[$i];
+                $maxRow = max($maxRow, $container['row']);
+            }
+
+            // Start from the bottom row and work upward
+            $newRow = $maxRow;
+            for ($i = $containerCount - 1; $i >= 0; $i--) {
+                $container = $containers[$i];
+
+                // Update row position
+                $container['row'] = $newRow;
+                $updatedContainers[] = $container;
+
+                // Move up to next position
+                $newRow--;
+            }
+        }
+
+        // Update arena with repositioned containers
+        $arena['containers'] = $updatedContainers;
+        return $arena;
     }
 
     private function calculateBacklogPenalty($room, $userId, $currentRound)
@@ -520,6 +1010,8 @@ class RoomController extends Controller
                 ->where('status', 'accepted')
                 ->where('round', '<', $currentRound) // Only previous rounds
                 ->first();
+
+            $marketIntelligence = MarketIntelligence::where('deck_id', $container->deck_id);
 
             if ($cardTemp) {
                 // Calculate weeks the container has been sitting in dock
@@ -693,6 +1185,16 @@ class RoomController extends Controller
                     ]
                 );
 
+                CapacityUptake::updateOrCreate([
+                    'user_id' => $userId,
+                    'room_id' => $room->id,
+                    'week' => 1,
+                    'port' => $port
+                ], [
+                    'arena_start' => $shipBay->arena,
+                    'arena_end' => null
+                ]);
+
                 $shipBays[] = $shipBay;
             }
         }
@@ -739,6 +1241,15 @@ class RoomController extends Controller
 
         // Sort destination ports by proximity to userPort using the swap config
         $sortedDestinationPorts = $this->sortByProximity($userPort, $destinationPorts, $swapConfig);
+
+        // Create a port sequence for checking valid stacking order
+        $portSequence = array_merge([$userPort], $sortedDestinationPorts);
+
+        // Build a map of port priorities (higher number = later port)
+        $portPriority = [];
+        foreach ($portSequence as $index => $port) {
+            $portPriority[$port] = $index;
+        }
 
         // Get distribution percentages based on number of destination ports
         $distributionPercentages = $this->getDistributionPercentages(count($destinationPorts));
@@ -805,17 +1316,26 @@ class RoomController extends Controller
             return $a['col'] - $b['col'];
         });
 
-        // Track occupied positions
+        // Track occupied positions and their content
         $occupiedPositions = [];
-        $positionsChecked = 0;
+        $containerPositions = []; // Will store destination port for each position
 
-        // Create containers according to our distribution
-        foreach ($containersPerDestination as $destinationPort => $count) {
+        // Sort destination ports by sequence (farthest ports first - for bottom placement)
+        $destinationsByPriority = $destinationPorts;
+        // Sort destinations - farther ports (lower priority) should be placed first/bottom
+        usort($destinationsByPriority, function ($a, $b) use ($portPriority) {
+            return $portPriority[$b] <=> $portPriority[$a];
+        });
+
+        // Create containers according to our distribution - process furthest ports first
+        foreach ($destinationsByPriority as $destinationPort) {
+            $count = $containersPerDestination[$destinationPort];
+
             for ($i = 0; $i < $count; $i++) {
                 // Find a valid position
                 $position = null;
+
                 foreach ($allPositions as $pos) {
-                    $positionsChecked++;
                     $bay = $pos['bay'];
                     $row = $pos['row'];
                     $col = $pos['col'];
@@ -828,16 +1348,31 @@ class RoomController extends Controller
                         continue;
                     }
 
-                    // Position is valid if bottom row or has container below
+                    // Check if position is valid - either bottom row or has container below
                     $isBottomRow = ($row === $bottomRowIndex);
-                    $hasContainerBelow = isset($occupiedPositions["$bay-" . ($row + 1) . "-$col"]);
+                    $belowPositionKey = "$bay-" . ($row + 1) . "-$col";
+                    $hasContainerBelow = isset($occupiedPositions[$belowPositionKey]);
 
+                    // If there's a container below, check port sequence to avoid restowage
+                    if ($hasContainerBelow) {
+                        $belowDestination = $containerPositions[$belowPositionKey];
+
+                        // We want containers for later ports to be below containers for earlier ports
+                        // If below container is for an EARLIER port (higher priority) than current,
+                        // this would create a restowage issue - skip this position
+                        if ($portPriority[$belowDestination] < $portPriority[$destinationPort]) {
+                            continue; // This would cause a restow - skip this position
+                        }
+                    }
+
+                    // Position is valid - either bottom row or proper stacking order
                     if ($isBottomRow || $hasContainerBelow) {
                         $position = $pos;
                         break;
                     }
                 }
 
+                // If no valid position found, skip this container
                 if (!$position) {
                     continue;
                 }
@@ -847,8 +1382,9 @@ class RoomController extends Controller
                 $col = $position['col'];
                 $positionKey = "$bay-$row-$col";
 
-                // Mark position as occupied
+                // Mark position as occupied and store destination
                 $occupiedPositions[$positionKey] = true;
+                $containerPositions[$positionKey] = $destinationPort;
 
                 // Determine container type based on bay type
                 $bayType = $bayTypes[$bay] ?? 'dry';

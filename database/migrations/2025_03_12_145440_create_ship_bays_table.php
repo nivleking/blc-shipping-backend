@@ -24,7 +24,10 @@ return new class extends Migration
             $table->bigInteger('penalty')->default(0);
             $table->bigInteger('extra_moves_penalty')->default(0);
             $table->bigInteger('backlog_penalty')->default(0);
+            $table->bigInteger('restowage_penalty')->default(0);
+            $table->json('restowage_containers')->nullable();
             $table->json('backlog_containers')->nullable();
+            $table->integer('restowage_moves')->default(0);
             $table->unsignedBigInteger('discharge_moves')->default(0);
             $table->unsignedBigInteger('load_moves')->default(0);
             $table->unsignedBigInteger('processed_cards')->default(0);

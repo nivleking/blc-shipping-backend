@@ -37,6 +37,7 @@ class MarketIntelligenceController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'price_data' => 'required|array',
+            'penalties' => 'nullable|array',
         ]);
 
         // Validate price data format
@@ -84,6 +85,9 @@ class MarketIntelligenceController extends Controller
             }
         }
 
+        // Validate penalties if they exist
+        $penalties = $request->penalties ?? $this->getUnrolledPenalties();
+
         // Create or update market intelligence
         $marketIntelligence = $deck->marketIntelligence;
 
@@ -92,6 +96,7 @@ class MarketIntelligenceController extends Controller
             $marketIntelligence->update([
                 'name' => $request->name,
                 'price_data' => $priceData,
+                'penalties' => $penalties,
             ]);
             $action = 'updated';
         } else {
@@ -99,6 +104,7 @@ class MarketIntelligenceController extends Controller
             $marketIntelligence = $deck->marketIntelligence()->create([
                 'name' => $request->name,
                 'price_data' => $priceData,
+                'penalties' => $penalties,
             ]);
             $action = 'created';
         }
@@ -126,15 +132,19 @@ class MarketIntelligenceController extends Controller
         // Get default price map
         $basePriceMap = $this->getBasePriceMap();
 
+        // Get default penalties for unrolled containers
+        $penalties = $this->getUnrolledPenalties();
+
         // Delete existing market intelligence if exists
         if ($deck->marketIntelligence) {
             $deck->marketIntelligence->delete();
         }
 
-        // Create new market intelligence
+        // Create new market intelligence with prices and penalties
         $marketIntelligence = $deck->marketIntelligence()->create([
             'name' => 'Default Market Intelligence',
             'price_data' => $basePriceMap,
+            'penalties' => $penalties
         ]);
 
         return response()->json($marketIntelligence, 201);

@@ -4,6 +4,20 @@ namespace App\Utilities;
 
 trait UtilitiesHelper
 {
+    protected function getUnrolledPenalties()
+    {
+        return [
+            // Committed dry containers
+            'dry_committed' => 16000000,
+            // Non-committed dry containers
+            'dry_non_committed' => 8000000,
+            // Committed reefer containers
+            'reefer_committed' => 24000000,
+            // Non-committed reefer containers
+            'reefer_non_committed' => 16000000
+        ];
+    }
+
     protected function generateContainerColor($destination)
     {
         $colorMap = [

@@ -7,9 +7,12 @@ use App\Models\Container;
 use App\Models\Deck;
 use App\Models\SalesCallCard;
 use Illuminate\Http\Request;
+use App\Utilities\UtilitiesHelper;
 
 class DeckController extends Controller
 {
+    use UtilitiesHelper;
+
     public function index(Request $request)
     {
         $includeCards = $request->query('include_cards', false);
@@ -57,10 +60,12 @@ class DeckController extends Controller
     private function createDefaultMarketIntelligence(Deck $deck)
     {
         $basePriceMap = $this->getDefaultBasePriceMap();
+        $penalties = $this->getUnrolledPenalties();
 
         $deck->marketIntelligence()->create([
             'name' => 'Default Market Intelligence',
             'price_data' => $basePriceMap,
+            'penalties' => $penalties,
         ]);
     }
 

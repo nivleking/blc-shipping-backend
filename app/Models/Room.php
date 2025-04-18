@@ -28,12 +28,12 @@ class Room extends Model
         'bay_types',
         'total_rounds',
         'move_cost',
-        'extra_moves_cost',
-        'backlog_penalty_per_container_cost',
-        'ideal_crane_split',
+        'dock_warehouse_cost',
         'cards_limit_per_round',
         'cards_must_process_per_round',
         'swap_config'
+        // 'extra_moves_cost',
+        // 'ideal_crane_split',
     ];
 
     protected $casts = [

@@ -18,10 +18,10 @@ class ShipBay extends Model
         'section',
         'penalty',
         'extra_moves_penalty',
-        'backlog_penalty',
         'restowage_penalty',
         'restowage_containers',
-        'backlog_containers',
+        'dock_warehouse_penalty',
+        'dock_warehouse_containers',
         'restowage_moves',
         'discharge_moves',
         'load_moves',
@@ -34,7 +34,7 @@ class ShipBay extends Model
 
     protected $casts = [
         'arena' => 'array',
-        'backlog_containers' => 'array',
+        'dock_warehouse_containers' => 'array',
         'restowage_containers' => 'array',
     ];
 

@@ -114,14 +114,14 @@ class WeeklyPerformanceController extends Controller
         $moveCosts = ($shipBay->discharge_moves + $shipBay->load_moves) * $moveCost;
 
         // Get extra moves penalty and data directly from ship bay
-        $extraMovesPenalty = $shipBay->extra_moves_penalty ?? 0;
-        $longCraneMoves = $shipBay->long_crane_moves ?? 0;
-        $extraMovesOnLongCrane = $shipBay->extra_moves_on_long_crane ?? 0;
-        $idealCraneSplit = $room->ideal_crane_split ?? 2;
+        // $extraMovesPenalty = $shipBay->extra_moves_penalty ?? 0;
+        // $longCraneMoves = $shipBay->long_crane_moves ?? 0;
+        // $extraMovesOnLongCrane = $shipBay->extra_moves_on_long_crane ?? 0;
+        // $idealCraneSplit = $room->ideal_crane_split ?? 2;
 
         // Calculate net result
         $revenue = $shipBay->revenue;
-        $netResult = $revenue - $moveCosts - $extraMovesPenalty;
+        $netResult = $revenue - $moveCosts;
 
         // Create or update weekly performance record
         $performance = WeeklyPerformance::updateOrCreate(
@@ -141,13 +141,13 @@ class WeeklyPerformanceController extends Controller
                 'non_committed_reefer_containers_not_loaded' => $nonCommittedReeferContainersNotLoaded,
                 'revenue' => $revenue,
                 'move_costs' => $moveCosts,
-                'extra_moves_penalty' => $extraMovesPenalty,
                 'net_result' => $netResult,
                 'discharge_moves' => $shipBay->discharge_moves,
                 'load_moves' => $shipBay->load_moves,
-                'long_crane_moves' => $longCraneMoves,
-                'extra_moves_on_long_crane' => $extraMovesOnLongCrane,
-                'ideal_crane_split' => $idealCraneSplit
+                // 'extra_moves_penalty' => $extraMovesPenalty,
+                // 'long_crane_moves' => $longCraneMoves,
+                // 'extra_moves_on_long_crane' => $extraMovesOnLongCrane,
+                // 'ideal_crane_split' => $idealCraneSplit
             ]
         );
 

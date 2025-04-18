@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Container;
 use App\Models\Room;
 use App\Models\ShipBay;
 use Illuminate\Http\Request;
@@ -182,7 +183,8 @@ class ShipBayController extends Controller
         $validatedData = $request->validate([
             'move_type' => 'required|in:discharge,load',
             'count' => 'required|integer|min:1',
-            'bay_index' => 'required|integer|min:0'
+            'bay_index' => 'required|integer|min:0',
+            'container_id' => 'required|exists:containers,id',
         ]);
 
         $shipBay = ShipBay::where('room_id', $roomId)
@@ -191,6 +193,14 @@ class ShipBayController extends Controller
 
         if (!$shipBay) {
             return response()->json(['message' => 'Ship bay not found'], 404);
+        }
+
+        // Update the container's last_processed_by field
+        $container = Container::find($validatedData['container_id']);
+        if ($container) {
+            $container->last_processed_by = $shipBay->port;
+            $container->last_processed_at = now();
+            $container->save();
         }
 
         $room = Room::find($roomId);
@@ -230,144 +240,66 @@ class ShipBayController extends Controller
         // Update bay moves in ship bay
         $shipBay->bay_moves = json_encode($bayMoves);
 
+        // BAY PAIR FEATURE OFF
         // Calculate bay pairs and extra moves
-        $bayCount = $room->bay_count;
-        $totalMoves = $shipBay->discharge_moves + $shipBay->load_moves;
-        $idealCraneSplit = $room->ideal_crane_split ?? 2;
-        $idealMovesPerCrane = $idealCraneSplit > 0 ? $totalMoves / $idealCraneSplit : 0;
+        // $bayCount = $room->bay_count;
+        // $totalMoves = $shipBay->discharge_moves + $shipBay->load_moves;
+        // $idealCraneSplit = $room->ideal_crane_split ?? 2;
+        // $idealMovesPerCrane = $idealCraneSplit > 0 ? $totalMoves / $idealCraneSplit : 0;
 
-        // Create bay pairs
-        $bayPairs = [];
+        // // Create bay pairs
+        // $bayPairs = [];
 
-        // First bay is its own pair
-        $bayPairs[] = [
-            'bays' => [0],
-            'total_moves' => $bayMoves[0]['total_moves'] ?? 0
-        ];
+        // // First bay is its own pair
+        // $bayPairs[] = [
+        //     'bays' => [0],
+        //     'total_moves' => $bayMoves[0]['total_moves'] ?? 0
+        // ];
 
-        // Process remaining bays in pairs
-        for ($i = 1; $i < $bayCount; $i += 2) {
-            if ($i + 1 < $bayCount) {
-                // Regular pair
-                $bayPairs[] = [
-                    'bays' => [$i, $i + 1],
-                    'total_moves' => ($bayMoves[$i]['total_moves'] ?? 0) +
-                        ($bayMoves[$i + 1]['total_moves'] ?? 0)
-                ];
-            } else {
-                // Last bay forms its own pair
-                $bayPairs[] = [
-                    'bays' => [$i],
-                    'total_moves' => $bayMoves[$i]['total_moves'] ?? 0
-                ];
-            }
-        }
+        // // Process remaining bays in pairs
+        // for ($i = 1; $i < $bayCount; $i += 2) {
+        //     if ($i + 1 < $bayCount) {
+        //         // Regular pair
+        //         $bayPairs[] = [
+        //             'bays' => [$i, $i + 1],
+        //             'total_moves' => ($bayMoves[$i]['total_moves'] ?? 0) +
+        //                 ($bayMoves[$i + 1]['total_moves'] ?? 0)
+        //         ];
+        //     } else {
+        //         // Last bay forms its own pair
+        //         $bayPairs[] = [
+        //             'bays' => [$i],
+        //             'total_moves' => $bayMoves[$i]['total_moves'] ?? 0
+        //         ];
+        //     }
+        // }
 
-        // Find the bay pair with the most moves (long crane)
-        $longCraneMoves = 0;
-        foreach ($bayPairs as $pair) {
-            if ($pair['total_moves'] > $longCraneMoves) {
-                $longCraneMoves = $pair['total_moves'];
-            }
-        }
+        // // Find the bay pair with the most moves (long crane)
+        // $longCraneMoves = 0;
+        // foreach ($bayPairs as $pair) {
+        //     if ($pair['total_moves'] > $longCraneMoves) {
+        //         $longCraneMoves = $pair['total_moves'];
+        //     }
+        // }
 
-        // Calculate extra moves on long crane
-        $extraMovesOnLongCrane = max(0, $longCraneMoves - $idealMovesPerCrane);
-        $extraMovesPenalty = round($extraMovesOnLongCrane) * $room->extra_moves_cost;
+        // // Calculate extra moves on long crane
+        // $extraMovesOnLongCrane = max(0, $longCraneMoves - $idealMovesPerCrane);
+        // $extraMovesPenalty = round($extraMovesOnLongCrane) * $room->extra_moves_cost;
 
-        // Update ship bay with all calculated values
-        $shipBay->bay_pairs = json_encode($bayPairs);
-        $shipBay->long_crane_moves = $longCraneMoves;
-        $shipBay->extra_moves_on_long_crane = round($extraMovesOnLongCrane);
+        // // Update ship bay with all calculated values
+        // $shipBay->bay_pairs = json_encode($bayPairs);
+        // $shipBay->long_crane_moves = $longCraneMoves;
+        // $shipBay->extra_moves_on_long_crane = round($extraMovesOnLongCrane);
 
-        // Update penalties
-        $shipBay->penalty += $movePenalty; // Add the new move penalty
-        $shipBay->extra_moves_penalty = $extraMovesPenalty; // Replace with current calculation
+        // // Update penalties
+        // $shipBay->extra_moves_penalty = $extraMovesPenalty; // Replace with current calculation
 
-        // Calculate final revenue
+        $shipBay->penalty += $movePenalty;
         $shipBay->total_revenue = $shipBay->revenue - $shipBay->penalty - $shipBay->extra_moves_penalty;
 
         $shipBay->save();
 
         return response()->json($shipBay);
-    }
-
-    private function recalculateBayPairs($shipBay)
-    {
-        // Similar logic to calculateBayPairs but works on the shipBay object directly
-        $room = Room::find($shipBay->room_id);
-        $bayCount = $room->bay_count;
-
-        $bayMoves = json_decode($shipBay->bay_moves ?? '{}', true);
-
-        // Initialize bay statistics for any missing bays
-        for ($i = 0; $i < $bayCount; $i++) {
-            if (!isset($bayMoves[$i])) {
-                $bayMoves[$i] = [
-                    'discharge_moves' => 0,
-                    'load_moves' => 0
-                ];
-            }
-
-            // Calculate total moves per bay
-            $bayMoves[$i]['total_moves'] =
-                $bayMoves[$i]['discharge_moves'] + $bayMoves[$i]['load_moves'];
-        }
-
-        // Create bay pairs
-        $bayPairs = [];
-
-        // First bay is its own pair
-        $bayPairs[] = [
-            'bays' => [0],
-            'total_moves' => $bayMoves[0]['total_moves'] ?? 0
-        ];
-
-        // Process remaining bays in pairs
-        for ($i = 1; $i < $bayCount; $i += 2) {
-            if ($i + 1 < $bayCount) {
-                // Regular pair
-                $bayPairs[] = [
-                    'bays' => [$i, $i + 1],
-                    'total_moves' => ($bayMoves[$i]['total_moves'] ?? 0) +
-                        ($bayMoves[$i + 1]['total_moves'] ?? 0)
-                ];
-            } else {
-                // Last bay forms its own pair if odd number of bays
-                $bayPairs[] = [
-                    'bays' => [$i],
-                    'total_moves' => $bayMoves[$i]['total_moves'] ?? 0
-                ];
-            }
-        }
-
-        // Find the bay pair with the most moves (long crane)
-        $longCraneMoves = 0;
-        foreach ($bayPairs as $pair) {
-            if ($pair['total_moves'] > $longCraneMoves) {
-                $longCraneMoves = $pair['total_moves'];
-            }
-        }
-
-        // Calculate total moves across all bays
-        $totalMoves = 0;
-        foreach ($bayMoves as $bayMove) {
-            $totalMoves += $bayMove['total_moves'] ?? 0;
-        }
-
-        // Calculate ideal average moves per crane
-        $idealCraneSplit = $room->ideal_crane_split ?? 2;
-        $idealAverageMovesPerCrane = $idealCraneSplit > 0 ? $totalMoves / $idealCraneSplit : 0;
-
-        // Calculate extra moves on long crane
-        $extraMovesOnLongCrane = max(0, $longCraneMoves - $idealAverageMovesPerCrane);
-
-        // Update the ship bay with the new calculations
-        $shipBay->bay_pairs = json_encode($bayPairs);
-        $shipBay->bay_moves = json_encode($bayMoves);
-        $shipBay->long_crane_moves = $longCraneMoves;
-        $shipBay->extra_moves_on_long_crane = round($extraMovesOnLongCrane);
-        $shipBay->save();
     }
 
     public function incrementCards(Request $request, $roomId, $userId)
@@ -423,22 +355,22 @@ class ShipBayController extends Controller
 
         // Get moves data
         $bayMoves = json_decode($shipBay->bay_moves ?? '{}', true);
-        $bayPairs = json_decode($shipBay->bay_pairs ?? '[]', true);
         $totalMoves = $shipBay->discharge_moves + $shipBay->load_moves;
-        $idealCraneSplit = $room->ideal_crane_split ?? 2;
-        $longCraneMoves = $shipBay->long_crane_moves;
-        $extraMovesOnLongCrane = $shipBay->extra_moves_on_long_crane;
-        $backlogContainers = $shipBay->backlog_containers;
+        $dockWarehouseContainers = $shipBay->dock_warehouse_containers;
+        // $bayPairs = json_decode($shipBay->bay_pairs ?? '[]', true);
+        // $idealCraneSplit = $room->ideal_crane_split ?? 2;
+        // $longCraneMoves = $shipBay->long_crane_moves;
+        // $extraMovesOnLongCrane = $shipBay->extra_moves_on_long_crane;
 
         return response()->json([
             'bay_moves' => $bayMoves,
-            'bay_pairs' => $bayPairs,
             'total_moves' => $totalMoves,
-            'ideal_crane_split' => $idealCraneSplit,
-            'ideal_average_moves_per_crane' => $totalMoves / $idealCraneSplit,
-            'long_crane_moves' => $longCraneMoves,
-            'extra_moves_on_long_crane' => $extraMovesOnLongCrane,
-            'backlog_containers' => $backlogContainers,
+            'dock_warehouse_containers' => $dockWarehouseContainers,
+            // 'bay_pairs' => $bayPairs,
+            // 'ideal_crane_split' => $idealCraneSplit,
+            // 'ideal_average_moves_per_crane' => $totalMoves / $idealCraneSplit,
+            // 'long_crane_moves' => $longCraneMoves,
+            // 'extra_moves_on_long_crane' => $extraMovesOnLongCrane,
         ]);
     }
 

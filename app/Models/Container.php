@@ -15,6 +15,8 @@ class Container extends Model
         'deck_id',
         'color',
         'type',
+        'last_processed_by',
+        'last_processed_at',
     ];
 
     protected $hidden = [

@@ -14,6 +14,8 @@ return new class extends Migration
             $table->foreignId('deck_id');
             $table->string('color');
             $table->string('type');
+            $table->string('last_processed_by')->nullable();
+            $table->timestamp('last_processed_at')->nullable();
             $table->timestamps();
 
             $table->foreign(['card_id', 'deck_id'])->references(['id', 'deck_id'])->on('cards')->onDelete('cascade');

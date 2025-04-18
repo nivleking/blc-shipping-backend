@@ -59,12 +59,12 @@ class RoomController extends Controller
             'ship_layout' => 'required|exists:ship_layouts,id',
             'total_rounds' => 'required|integer|min:1',
             'move_cost' => 'required|integer|min:1',
-            'extra_moves_cost' => 'required|integer|min:1',
-            'ideal_crane_split' => 'required|integer|min:1',
-            'backlog_penalty_per_container_cost' => 'required|integer|min:1',
+            'dock_warehouse_cost' => 'required|integer|min:1',
             'cards_limit_per_round' => 'required|integer|min:1',
             'cards_must_process_per_round' => 'required|integer|min:1',
             'swap_config' => 'required|nullable|array'
+            // 'extra_moves_cost' => 'required|integer|min:1',
+            // 'ideal_crane_split' => 'required|integer|min:1',
         ]);
 
         $admin = $request->user();
@@ -86,12 +86,12 @@ class RoomController extends Controller
                 'bay_types' => json_encode($layout->bay_types),
                 'total_rounds' => $validated['total_rounds'],
                 'move_cost' => $validated['move_cost'],
-                'extra_moves_cost' => $validated['extra_moves_cost'],
-                'ideal_crane_split' => $validated['ideal_crane_split'],
-                'backlog_penalty_per_container_cost' => $validated['backlog_penalty_per_container_cost'],
+                'dock_warehouse_cost' => $validated['dock_warehouse_cost'],
                 'cards_limit_per_round' => $validated['cards_limit_per_round'],
                 'cards_must_process_per_round' => $validated['cards_must_process_per_round'],
                 'swap_config' => json_encode($validated['swap_config'] ?? [])
+                // 'extra_moves_cost' => $validated['extra_moves_cost'],
+                // 'ideal_crane_split' => $validated['ideal_crane_split'],
             ]);
 
             return response()->json($room, 200);
@@ -145,12 +145,12 @@ class RoomController extends Controller
                             'week' => $bay->current_round,
                             'discharge_moves' => $bay->discharge_moves,
                             'load_moves' => $bay->load_moves,
-                            'bay_pairs' => $bay->bay_pairs,
                             'bay_moves' => $bay->bay_moves,
-                            'long_crane_moves' => $bay->long_crane_moves,
-                            'extra_moves_on_long_crane' => $bay->extra_moves_on_long_crane,
                             'created_at' => now(),
                             'updated_at' => now()
+                            // 'bay_pairs' => $bay->bay_pairs,
+                            // 'long_crane_moves' => $bay->long_crane_moves,
+                            // 'extra_moves_on_long_crane' => $bay->extra_moves_on_long_crane,
                         ]);
                     }
                 }
@@ -168,13 +168,13 @@ class RoomController extends Controller
             'cards_limit_per_round' => 'integer|min:1',
             'cards_must_process_per_round' => 'integer|min:1',
             'move_cost' => 'integer|min:1',
-            'extra_moves_cost' => 'integer|min:1',
-            'ideal_crane_split' => 'integer|min:1',
-            'backlog_penalty_per_container_cost' => 'integer|min:1',
+            'dock_warehouse_cost' => 'integer|min:1',
             'assigned_users' => 'array',
             'assigned_users.*' => 'exists:users,id',
             'deck' => 'exists:decks,id',
             'ship_layout' => 'exists:ship_layouts,id',
+            // 'extra_moves_cost' => 'integer|min:1',
+            // 'ideal_crane_split' => 'integer|min:1',
         ]);
 
         if (isset($validated['name'])) $room->name = $validated['name'];
@@ -183,10 +183,10 @@ class RoomController extends Controller
         if (isset($validated['cards_limit_per_round'])) $room->cards_limit_per_round = $validated['cards_limit_per_round'];
         if (isset($validated['cards_must_process_per_round'])) $room->cards_must_process_per_round = $validated['cards_must_process_per_round'];
         if (isset($validated['move_cost'])) $room->move_cost = $validated['move_cost'];
-        if (isset($validated['extra_moves_cost'])) $room->extra_moves_cost = $validated['extra_moves_cost'];
-        if (isset($validated['ideal_crane_split'])) $room->ideal_crane_split = $validated['ideal_crane_split'];
-        if (isset($validated['backlog_penalty_per_container_cost'])) {
-            $room->backlog_penalty_per_container_cost = $validated['backlog_penalty_per_container_cost'];
+        // if (isset($validated['extra_moves_cost'])) $room->extra_moves_cost = $validated['extra_moves_cost'];
+        // if (isset($validated['ideal_crane_split'])) $room->ideal_crane_split = $validated['ideal_crane_split'];
+        if (isset($validated['dock_warehouse_cost'])) {
+            $room->dock_warehouse_cost = $validated['dock_warehouse_cost'];
         }
 
         if (isset($validated['assigned_users'])) {
@@ -484,8 +484,7 @@ class RoomController extends Controller
         $restowageMoves = $totalContainersToMove * 2;
 
         // Calculate penalty based on move cost
-        $moveCost = $room->extra_moves_cost ?? $room->move_cost ?? 50000;
-        $restowagePenalty = $restowageMoves * $moveCost;
+        $restowagePenalty = $restowageMoves * $room->restowage_cost;
 
         // Add moves_required to each container entry
         foreach ($restowageContainers as &$container) {
@@ -612,19 +611,19 @@ class RoomController extends Controller
                 ]
             );
 
-            // Calculate backlog penalties for containers sitting in dock
-            $backlogDetails = $this->calculateBacklogPenalty($room, $userId, $shipBay->current_round + 1);
+            // Calculate penalties for containers sitting in dock
+            $dockWarehouseDetails = $this->calculateDockWarehouse($room, $userId, $shipBay->current_round + 1);
 
             // Calculate restowage penalties
             $restowageDetails = $this->calculateRestowagePenalties($room, $userId);
 
             // Add or update backlog penalty
-            if (!isset($shipBay->backlog_penalty)) {
-                $shipBay->backlog_penalty = 0;
+            if (!isset($shipBay->dock_warehouse_penalty)) {
+                $shipBay->dock_warehouse_penalty = 0;
             }
 
-            $shipBay->backlog_penalty += $backlogDetails['penalty'];
-            $shipBay->backlog_containers = $backlogDetails['backlog_containers'];
+            $shipBay->dock_warehouse_penalty = $dockWarehouseDetails['penalty'];
+            $shipBay->dock_warehouse_containers = $dockWarehouseDetails['dock_warehouse_containers'];
 
             // Add or update restowage penalty
             if (!isset($shipBay->restowage_penalty)) {
@@ -636,7 +635,7 @@ class RoomController extends Controller
             $shipBay->restowage_containers = $restowageDetails['containers'];
 
             // Update total penalty
-            $shipBay->penalty = ($shipBay->backlog_penalty ?? 0) + ($shipBay->restowage_penalty ?? 0);
+            $shipBay->penalty = $shipBay->penalty + ($shipBay->dock_warehouse_penalty ?? 0) + ($shipBay->restowage_penalty ?? 0);
 
             // Update total revenue calculation (subtract penalties)
             $shipBay->total_revenue = ($shipBay->revenue ?? 0) - ($shipBay->penalty ?? 0);
@@ -756,26 +755,26 @@ class RoomController extends Controller
                 'week' => $bay->current_round,
                 'discharge_moves' => $bay->discharge_moves,
                 'load_moves' => $bay->load_moves,
-                'bay_pairs' => $bay->bay_pairs,
                 'bay_moves' => $bay->bay_moves,
-                'long_crane_moves' => $bay->long_crane_moves,
-                'extra_moves_on_long_crane' => $bay->extra_moves_on_long_crane,
                 'restowage_moves' => $bay->restowage_moves ?? 0,
                 'restowage_penalty' => $bay->restowage_penalty ?? 0,
                 'created_at' => now(),
                 'updated_at' => now()
+                // 'bay_pairs' => $bay->bay_pairs,
+                // 'long_crane_moves' => $bay->long_crane_moves,
+                // 'extra_moves_on_long_crane' => $bay->extra_moves_on_long_crane,
             ]);
 
             // Reset statistics for the new week
             $bay->discharge_moves = 0;
             $bay->load_moves = 0;
-            $bay->bay_pairs = json_encode([]);
             $bay->bay_moves = json_encode([]);
-            $bay->long_crane_moves = 0;
-            $bay->extra_moves_on_long_crane = 0;
             $bay->restowage_moves = 0;
             $bay->restowage_containers = null;
             $bay->save();
+            // $bay->bay_pairs = json_encode([]);
+            // $bay->long_crane_moves = 0;
+            // $bay->extra_moves_on_long_crane = 0;
         }
 
         // Now reload the bays to get the updated arenas (with restowage containers removed)
@@ -956,7 +955,7 @@ class RoomController extends Controller
         return $arena;
     }
 
-    private function calculateBacklogPenalty($room, $userId, $currentRound)
+    private function calculateDockWarehouse($room, $userId, $currentRound)
     {
         // Get ship dock to find containers that weren't moved
         $shipDock = ShipDock::where('room_id', $room->id)
@@ -964,7 +963,7 @@ class RoomController extends Controller
             ->first();
 
         if (!$shipDock) {
-            return ['penalty' => 0, 'backlog_containers' => []];
+            return ['penalty' => 0, 'dock_warehouse_containers' => []];
         }
 
         // Parse arena data to get containers in dock
@@ -972,7 +971,7 @@ class RoomController extends Controller
         $dockContainers = isset($arenaData['containers']) ? $arenaData['containers'] : [];
 
         if (empty($dockContainers)) {
-            return ['penalty' => 0, 'backlog_containers' => []];
+            return ['penalty' => 0, 'dock_warehouse_containers' => []];
         }
 
         // Build container ID list
@@ -986,16 +985,19 @@ class RoomController extends Controller
             ->where('status', 'accepted')
             ->where('round', '<', $currentRound) // Only previous rounds
             ->with(['card' => function ($query) {
-                $query->select('id', 'deck_id'); // Get only necessary fields
+                $query->select('id', 'deck_id', 'destination');
             }])
             ->get();
 
-        // Get containers from these card temporaries
-        $acceptedCardIds = $cardTemporaries->pluck('card_id')->toArray();
-        $acceptedDeckIds = $cardTemporaries->pluck('deck_id')->toArray();
+        // Get current port for this user
+        $shipBay = ShipBay::where('room_id', $room->id)
+            ->where('user_id', $userId)
+            ->first();
+
+        $currentPort = $shipBay ? $shipBay->port : '';
 
         // Match containers with accepted cards
-        $backlogContainers = [];
+        $dockWarehouseContainers = [];
         $totalPenalty = 0;
 
         foreach ($containerIds as $containerId) {
@@ -1011,22 +1013,42 @@ class RoomController extends Controller
                 ->where('round', '<', $currentRound) // Only previous rounds
                 ->first();
 
-            $marketIntelligence = MarketIntelligence::where('deck_id', $container->deck_id);
-
             if ($cardTemp) {
                 // Calculate weeks the container has been sitting in dock
                 $weeksPending = $currentRound - $cardTemp->round;
 
                 if ($weeksPending > 0) {
-                    $penalty = $weeksPending * $room->backlog_penalty_per_container_cost;
+                    $penalty = $room->dock_warehouse_cost;
                     $totalPenalty += $penalty;
 
-                    $backlogContainers[] = [
+                    $dockWarehouseContainers[] = [
                         'container_id' => $containerId,
                         'card_id' => $container->card_id,
                         'round_accepted' => $cardTemp->round,
                         'weeks_pending' => $weeksPending,
-                        'penalty' => $penalty
+                        'penalty' => $penalty,
+                        'reason' => 'Not loaded after acceptance'
+                    ];
+                }
+            } else {
+                // ENHANCEMENT: Check if this is a foreign container (not accepted by this port)
+                // Get container's destination from its associated card
+                $containerCard = $container->card;
+
+                if ($containerCard && $containerCard->destination != $currentPort) {
+                    // This is a container not destined for current port - should be penalized
+                    // We consider it's been in the dock for at least 1 round
+                    $penalty = $room->dock_warehouse_cost;
+                    $totalPenalty += $penalty;
+
+                    $dockWarehouseContainers[] = [
+                        'container_id' => $containerId,
+                        'card_id' => $container->card_id,
+                        'destination' => $containerCard->destination,
+                        'origin' => $containerCard->origin,
+                        'weeks_pending' => 1,
+                        'penalty' => $penalty,
+                        'reason' => 'Foreign container detention'
                     ];
                 }
             }
@@ -1034,7 +1056,7 @@ class RoomController extends Controller
 
         return [
             'penalty' => $totalPenalty,
-            'backlog_containers' => $backlogContainers
+            'dock_warehouse_containers' => $dockWarehouseContainers
         ];
     }
 
@@ -1722,15 +1744,15 @@ class RoomController extends Controller
                     'port' => $shipBay->port,
                     'revenue' => $shipBay->revenue,
                     'penalty' => $shipBay->penalty,
-                    'extra_moves_penalty' => $shipBay->extra_moves_penalty,
-                    'backlog_penalty' => $shipBay->backlog_penalty,
+                    'dock_warehouse_penalty' => $shipBay->dock_warehouse_penalty,
                     'total_revenue' => $shipBay->total_revenue,
                     'discharge_moves' => $shipBay->discharge_moves,
                     'load_moves' => $shipBay->load_moves,
                     'accepted_cards' => $shipBay->accepted_cards,
                     'rejected_cards' => $shipBay->rejected_cards,
-                    'long_crane_moves' => $shipBay->long_crane_moves,
-                    'extra_moves_on_long_crane' => $shipBay->extra_moves_on_long_crane
+                    // 'extra_moves_penalty' => $shipBay->extra_moves_penalty,
+                    // 'long_crane_moves' => $shipBay->long_crane_moves,
+                    // 'extra_moves_on_long_crane' => $shipBay->extra_moves_on_long_crane
                 ];
             }
 

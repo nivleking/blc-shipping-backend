@@ -27,13 +27,14 @@ return new class extends Migration
             $table->json('bay_types')->nullable();
             $table->integer('total_rounds')->default(1);
             $table->bigInteger('move_cost')->default(1000000);
-            $table->bigInteger('extra_moves_cost')->default(50000);
-            $table->bigInteger('backlog_penalty_per_container_cost')->default(50000);
-            $table->integer('ideal_crane_split')->default(2);
+            $table->bigInteger('dock_warehouse_cost')->default(50000);
+            $table->bigInteger('restowage_cost')->default(50000);
             $table->integer('cards_limit_per_round')->default(1);
             $table->integer('cards_must_process_per_round')->default(1);
             $table->json('swap_config')->nullable();
             $table->timestamps();
+            // $table->bigInteger('extra_moves_cost')->default(50000);
+            // $table->integer('ideal_crane_split')->default(2);
         });
     }
 

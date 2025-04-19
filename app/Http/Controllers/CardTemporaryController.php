@@ -3,12 +3,161 @@
 namespace App\Http\Controllers;
 
 use App\Models\CardTemporary;
+use App\Models\Container;
 use App\Models\Room;
+use App\Models\ShipBay;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class CardTemporaryController extends Controller
 {
+    public function acceptCardTemporary(Request $request)
+    {
+        $validated = $request->validate([
+            'room_id' => 'required|exists:rooms,id',
+            'card_temporary_id' => 'required|exists:cards,id',
+            'round' => 'required|integer|min:1',
+        ]);
+
+        $cardTemporary = CardTemporary::where('card_id', $validated['card_temporary_id'])
+            ->where('room_id', $validated['room_id'])
+            ->first();
+
+        if (!$cardTemporary) {
+            return response()->json(['error' => 'Card temporary not found'], 404);
+        }
+
+        // Get all container IDs for this card
+        $containers = Container::where('card_id', $cardTemporary->card_id)
+            ->where('deck_id', $cardTemporary->deck_id)
+            ->pluck('id')
+            ->toArray();
+
+        $cardTemporary->status = 'accepted';
+        $cardTemporary->round = $validated['round'];
+        $cardTemporary->unfulfilled_containers = $containers;
+        $cardTemporary->revenue_granted = false;
+        $cardTemporary->save();
+
+        return response()->json([
+            'message' => 'Sales call card accepted.',
+            'unfulfilled_containers' => $containers
+        ]);
+    }
+
+    public function rejectCardTemporary(Request $request)
+    {
+        $validated = $request->validate([
+            'room_id' => 'required|exists:rooms,id',
+            'card_temporary_id' => 'required|exists:cards,id',
+            'round' => 'required|integer|min:1',
+        ]);
+
+        $cardTemporary = CardTemporary::where('card_id', $validated['card_temporary_id'])
+            ->where('room_id', $validated['room_id'])
+            ->first();
+
+        $cardTemporary->status = 'rejected';
+        $cardTemporary->round = $validated['round'];
+        $cardTemporary->save();
+
+        return response()->json(['message' => 'Sales call card rejected.']);
+    }
+
+    public function getUnfulfilledContainers($roomId, $userId)
+    {
+        $cardTemporaries = CardTemporary::where([
+            'room_id' => $roomId,
+            'user_id' => $userId,
+            'status' => 'accepted',
+        ])
+            ->whereNotNull('unfulfilled_containers')
+            ->where('unfulfilled_containers', '!=', '[]')
+            ->get();
+
+        $unfulfilledContainers = [];
+
+        foreach ($cardTemporaries as $card) {
+            $unfulfilledContainers[$card->card_id] = $card->unfulfilled_containers;
+        }
+
+        return response()->json($unfulfilledContainers);
+    }
+
+    public function getCardTemporaries($roomId, $userId)
+    {
+        $shipBay = ShipBay::where('room_id', $roomId)
+            ->where('user_id', $userId)
+            ->first();
+
+        $currentRound = $shipBay->current_round;
+
+        // Use a direct join instead of relationship loading
+        $cardTemporaries = CardTemporary::select(
+            'card_temporaries.*',
+            'cards.type',
+            'cards.priority',
+            'cards.origin',
+            'cards.destination',
+            'cards.quantity',
+            'cards.revenue'
+        )
+            ->join('cards', function ($join) {
+                $join->on('cards.id', '=', 'card_temporaries.card_id')
+                    ->on('cards.deck_id', '=', 'card_temporaries.deck_id');
+            })
+            ->where([
+                'card_temporaries.room_id' => $roomId,
+                'card_temporaries.user_id' => $userId,
+                'card_temporaries.status' => 'selected',
+            ])
+            ->where(function ($query) use ($currentRound) {
+                $query->where('card_temporaries.round', $currentRound)
+                    ->orWhere('card_temporaries.is_backlog', true);
+            })
+            ->orderByRaw('card_temporaries.is_backlog DESC')
+            ->orderByRaw("CASE WHEN cards.priority = 'Committed' THEN 1 ELSE 2 END")
+            // ->orderByRaw("CAST(card_temporaries.card_id AS UNSIGNED) ASC")
+            ->get();
+
+        // Format the result to match what the frontend expects
+        $formattedResult = $cardTemporaries->map(function ($temp) {
+            // Create a card property with the joined data
+            $temp->card = [
+                'id' => $temp->card_id,
+                'deck_id' => $temp->deck_id,
+                'type' => $temp->type,
+                'priority' => $temp->priority,
+                'origin' => $temp->origin,
+                'destination' => $temp->destination,
+                'quantity' => $temp->quantity,
+                'revenue' => $temp->revenue
+            ];
+
+            // Remove duplicated attributes
+            unset($temp->type);
+            unset($temp->priority);
+            unset($temp->origin);
+            unset($temp->destination);
+            unset($temp->quantity);
+            unset($temp->revenue);
+
+            return $temp;
+        });
+
+        $room = Room::find($roomId);
+
+        // Get first card limit cards from formattedResult
+        $cardsLimit = $room->cards_limit_per_round;
+        if ($formattedResult->count() > $cardsLimit) {
+            $formattedResult = $formattedResult->take($cardsLimit);
+        }
+
+        return response()->json([
+            "cards" => $formattedResult,
+        ]);
+    }
+
     /**
      * Create multiple card temporaries in a batch
      */

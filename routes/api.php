@@ -65,7 +65,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/users/{user}/password', [UserController::class, 'showPassword']);
 });
 
-// Admin - Deck Routes)
+// Admin - Deck Routes
 Route::get('decks', [DeckController::class, 'index']);
 Route::post('decks', [DeckController::class, 'store']);
 Route::get('decks/{deck}', [DeckController::class, 'show']);
@@ -131,10 +131,11 @@ Route::get('rooms/{roomId}/port-sequence/{port}', [RoomController::class, 'getPr
 Route::get('rooms/{roomId}/restowage-status', [RoomController::class, 'getRestowageStatus'])->middleware('auth:sanctum');
 
 // Route::post('rooms/{room}/create-card-temporary/{user}', [RoomController::class, 'createCardTemporary'])->middleware('auth:sanctum', 'admin');
-Route::get('card-temporary/{roomId}/{userId}', [RoomController::class, 'getCardTemporaries']);
-Route::post('card-temporary/accept', [RoomController::class, 'acceptCardTemporary'])->middleware('auth:sanctum');
-Route::post('card-temporary/reject', [RoomController::class, 'rejectCardTemporary'])->middleware('auth:sanctum');
-Route::post('/card-temporary/batch', [CardTemporaryController::class, 'batchCreate']);
+Route::get('card-temporary/{roomId}/{userId}', [CardTemporaryController::class, 'getCardTemporaries']);
+Route::get('card-temporary/unfulfilled/{roomId}/{userId}', [CardTemporaryController::class, 'getUnfulfilledContainers']);
+Route::post('card-temporary/accept', [CardTemporaryController::class, 'acceptCardTemporary']);
+Route::post('card-temporary/reject', [CardTemporaryController::class, 'rejectCardTemporary']);
+Route::post('card-temporary/batch', [CardTemporaryController::class, 'batchCreate']);
 
 // ShipBay Routes
 Route::get('ship-bays', [ShipBayController::class, 'index']);

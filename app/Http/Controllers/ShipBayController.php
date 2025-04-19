@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Card;
+use App\Models\CardTemporary;
 use App\Models\Container;
 use App\Models\Room;
 use App\Models\ShipBay;
@@ -22,7 +24,10 @@ class ShipBayController extends Controller
             'user_id' => 'required|exists:users,id',
             'room_id' => 'required|exists:rooms,id',
             'section' => 'sometimes|string|in:section1,section2',
-            'revenue' => 'sometimes|numeric'
+            'moved_container' => 'sometimes|array',
+            'moved_container.id' => 'sometimes|exists:containers,id',
+            'moved_container.from' => 'sometimes|string',
+            'moved_container.to' => 'sometimes|string',
         ]);
 
         $room = Room::find($validatedData['room_id']);
@@ -57,12 +62,163 @@ class ShipBayController extends Controller
         );
 
         $shipBay->arena = json_encode($arenaData);
-        $shipBay->revenue = $validatedData['revenue'] ?? $shipBay->revenue ?? 0;
         $shipBay->section = $validatedData['section'] ?? $shipBay->section ?? 'section1';
-        $shipBay->total_revenue = ($shipBay->revenue ?? 0) - ($shipBay->penalty ?? 0);
         $shipBay->save();
+        // $shipBay->revenue = $validatedData['revenue'] ?? $shipBay->revenue ?? 0;
+        // $shipBay->total_revenue = ($shipBay->revenue ?? 0) - ($shipBay->penalty ?? 0);
+
+        // Handle container movement tracking for revenue
+        if (
+            isset($validatedData['moved_container']) &&
+            isset($validatedData['moved_container']['id']) &&
+            isset($validatedData['moved_container']['from']) &&
+            isset($validatedData['moved_container']['to'])
+        ) {
+
+            $container = Container::find($validatedData['moved_container']['id']);
+            $fromLocation = $validatedData['moved_container']['from'];
+            $toLocation = $validatedData['moved_container']['to'];
+
+            // Check if moving from dock to bay or bay to dock
+            $movingToBay = strpos($toLocation, 'bay-') === 0 && strpos($fromLocation, 'docks-') === 0;
+            $movingToDock = strpos($toLocation, 'docks-') === 0 && strpos($fromLocation, 'bay-') === 0;
+
+            if ($container && ($movingToBay || $movingToDock)) {
+                $this->updateContainerFulfillmentStatus(
+                    $container,
+                    $validatedData['user_id'],
+                    $validatedData['room_id'],
+                    $movingToBay
+                );
+            }
+        }
 
         return response()->json($shipBay, 201);
+    }
+
+    /**
+     * Update container fulfillment status and possibly grant revenue
+     */
+    private function updateContainerFulfillmentStatus($container, $userId, $roomId, $isMovingToBay)
+    {
+        // Find active card temporary for this container
+        $cardTemp = CardTemporary::where([
+            'user_id' => $userId,
+            'room_id' => $roomId,
+            'card_id' => $container->card_id,
+            'deck_id' => $container->deck_id,
+            'status' => 'accepted',
+        ])->first();
+
+        if (!$cardTemp || !isset($cardTemp->unfulfilled_containers)) {
+            return;
+        }
+
+        // Get the current round from ShipBay
+        $shipBay = ShipBay::where('room_id', $roomId)
+            ->where('user_id', $userId)
+            ->first();
+
+        if (!$shipBay) {
+            return;
+        }
+
+        $currentRound = $shipBay->current_round;
+        $unfulfilled = $cardTemp->unfulfilled_containers ?? [];
+
+        // Check if this is the original round that the card was shown in
+        $isCardOriginalRound = ($cardTemp->round == $currentRound);
+
+        if ($isMovingToBay) {
+            // Container is being moved to ship bay - remove from unfulfilled list
+            $unfulfilled = array_diff($unfulfilled, [$container->id]);
+        } else {
+            // Container is being moved back to dock
+
+            // Only add back to unfulfilled list if we're in the same round as when
+            // the card was presented (or if it's backlog from an earlier round)
+            if ($isCardOriginalRound || ($cardTemp->is_backlog && $cardTemp->original_round < $currentRound)) {
+                if (!in_array($container->id, $unfulfilled)) {
+                    $unfulfilled[] = $container->id;
+                }
+            } else {
+                // We're in a later round, don't add back to unfulfilled
+                // (effectively preserving the revenue)
+            }
+        }
+
+        $cardTemp->unfulfilled_containers = $unfulfilled;
+
+        // If all containers are fulfilled and revenue not yet granted
+        if (empty($unfulfilled) && !$cardTemp->revenue_granted) {
+            $this->grantRevenueForCompletedCard($cardTemp, $roomId, $userId);
+            $cardTemp->revenue_granted = true;
+            $cardTemp->fulfillment_round = $currentRound; // Record when it was fulfilled
+        }
+        // Only revert revenue if we're in the card's original round
+        elseif (!empty($unfulfilled) && $cardTemp->revenue_granted && $isCardOriginalRound) {
+            $this->revertRevenueForCard($cardTemp, $roomId, $userId);
+            $cardTemp->revenue_granted = false;
+            $cardTemp->fulfillment_round = null; // Clear fulfillment round
+        }
+
+        $cardTemp->save();
+    }
+
+    /**
+     * Grant revenue for a completed card
+     */
+    private function grantRevenueForCompletedCard($cardTemp, $roomId, $userId)
+    {
+        $card = Card::where('id', $cardTemp->card_id)
+            ->where('deck_id', $cardTemp->deck_id)
+            ->first();
+
+        if (!$card) {
+            return;
+        }
+
+        $shipBay = ShipBay::where('room_id', $roomId)
+            ->where('user_id', $userId)
+            ->first();
+
+        if (!$shipBay) {
+            return;
+        }
+
+        // Add revenue from this card
+        $cardRevenue = $card->revenue;
+        $shipBay->revenue += $cardRevenue;
+        $shipBay->total_revenue = $shipBay->revenue - $shipBay->penalty;
+        $shipBay->save();
+    }
+
+    /**
+     * Revert revenue if containers are moved back to dock
+     */
+    private function revertRevenueForCard($cardTemp, $roomId, $userId)
+    {
+        $card = Card::where('id', $cardTemp->card_id)
+            ->where('deck_id', $cardTemp->deck_id)
+            ->first();
+
+        if (!$card) {
+            return;
+        }
+
+        $shipBay = ShipBay::where('room_id', $roomId)
+            ->where('user_id', $userId)
+            ->first();
+
+        if (!$shipBay) {
+            return;
+        }
+
+        // Subtract revenue from this card
+        $cardRevenue = $card->revenue;
+        $shipBay->revenue -= $cardRevenue;
+        $shipBay->total_revenue = $shipBay->revenue - $shipBay->penalty;
+        $shipBay->save();
     }
 
     /**
@@ -184,7 +340,7 @@ class ShipBayController extends Controller
             'move_type' => 'required|in:discharge,load',
             'count' => 'required|integer|min:1',
             'bay_index' => 'required|integer|min:0',
-            'container_id' => 'required|exists:containers,id',
+            'container_id' => 'sometimes|exists:containers,id',
         ]);
 
         $shipBay = ShipBay::where('room_id', $roomId)

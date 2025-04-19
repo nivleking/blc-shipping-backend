@@ -17,13 +17,19 @@ class CardTemporary extends Model
         'status',
         'round',
         'is_backlog',
-        'original_round'
+        'original_round',
+        'unfulfilled_containers',
+        'revenue_granted',
+        'fulfillment_round',
     ];
 
     protected $casts = [
         'is_backlog' => 'boolean',
         'round' => 'integer',
-        'original_round' => 'integer'
+        'original_round' => 'integer',
+        'unfulfilled_containers' => 'array',
+        'revenue_granted' => 'boolean',
+        'fulfillment_round' => 'integer',
     ];
 
     public function card()

@@ -340,15 +340,69 @@ class RoomController extends Controller
         // Get the current port
         $currentPort = $shipBay->port;
 
-        // Build the port sequence starting from current port
-        $portSequence = [];
-        $nextPort = $currentPort;
-        $visited = [$currentPort => true];
+        // ENHANCEMENT: Identify all port sequences from the swap config
+        $portSequences = [];
+        $visitedPorts = [];
 
-        while (isset($swapConfig[$nextPort]) && !isset($visited[$swapConfig[$nextPort]])) {
-            $nextPort = $swapConfig[$nextPort];
-            $portSequence[] = $nextPort;
-            $visited[$nextPort] = true;
+        // First, identify all starting ports (could be multiple chains)
+        $startingPorts = array_keys($swapConfig);
+
+        // For each starting port, build its sequence
+        foreach ($startingPorts as $startPort) {
+            if (isset($visitedPorts[$startPort])) continue;
+
+            $sequence = [];
+            $nextPort = $startPort;
+            $chainVisited = [$startPort => true];
+
+            // Follow the chain until we reach a port we've already visited
+            while (isset($swapConfig[$nextPort]) && !isset($chainVisited[$swapConfig[$nextPort]])) {
+                $nextPort = $swapConfig[$nextPort];
+                $sequence[] = $nextPort;
+                $chainVisited[$nextPort] = true;
+                $visitedPorts[$nextPort] = true;
+            }
+
+            if (!empty($sequence)) {
+                $portSequences[$startPort] = $sequence;
+            }
+        }
+
+        // Now identify the specific sequence that contains our current port
+        $portSequence = [];
+        $foundInSequence = false;
+
+        // First, check if current port is a starting port
+        if (isset($portSequences[$currentPort])) {
+            $portSequence = $portSequences[$currentPort];
+            $foundInSequence = true;
+        } else {
+            // Check if current port is in any sequence
+            foreach ($portSequences as $startPort => $sequence) {
+                $index = array_search($currentPort, $sequence);
+                if ($index !== false) {
+                    // Reorder sequence to start from current port
+                    $portSequence = array_merge(
+                        array_slice($sequence, $index + 1),
+                        [$startPort],
+                        array_slice($sequence, 0, $index)
+                    );
+                    $foundInSequence = true;
+                    break;
+                }
+            }
+        }
+
+        // If port not found in any sequence, fallback to original method
+        if (!$foundInSequence) {
+            $nextPort = $currentPort;
+            $visited = [$currentPort => true];
+
+            while (isset($swapConfig[$nextPort]) && !isset($visited[$swapConfig[$nextPort]])) {
+                $nextPort = $swapConfig[$nextPort];
+                $portSequence[] = $nextPort;
+                $visited[$nextPort] = true;
+            }
         }
 
         // Get all containers in the bay
@@ -385,9 +439,10 @@ class RoomController extends Controller
         }
 
         // Calculate port priority - lower number means earlier port visit
-        $portPriority = [];
+        // ENHANCEMENT: Include the current port in the priority map
+        $portPriority = [$currentPort => 0]; // Current port has highest priority (lowest number)
         foreach ($portSequence as $index => $port) {
-            $portPriority[$port] = $index;
+            $portPriority[$port] = $index + 1; // Other ports have priorities starting from 1
         }
 
         $restowageContainers = [];
@@ -415,9 +470,22 @@ class RoomController extends Controller
                     continue;
                 }
 
-                // Skip if destination is not in our port sequence
+                // ENHANCEMENT: Handle containers with destinations outside our direct sequence
+                // If the destination is not in our port priority map, check if it's in any sequence
                 if (!isset($portPriority[$targetDestination])) {
-                    continue;
+                    // Container with destination in another sequence chain should be
+                    // considered as a lowest priority (will be visited last)
+                    $portPriority[$targetDestination] = PHP_INT_MAX;
+
+                    // Check if this destination exists in any sequence
+                    foreach ($portSequences as $startPort => $sequence) {
+                        if (in_array($targetDestination, $sequence) || $startPort === $targetDestination) {
+                            // Found in another sequence - assign a high priority number
+                            // but still need to check for stacking violations
+                            $portPriority[$targetDestination] = 1000; // Arbitrary high number, but not MAX
+                            break;
+                        }
+                    }
                 }
 
                 // Check for containers above that need to be moved
@@ -431,8 +499,22 @@ class RoomController extends Controller
                         continue;
                     }
 
+                    // ENHANCEMENT: Handle top containers with destinations outside our direct sequence
                     if (!isset($portPriority[$topDestination])) {
-                        continue;
+                        // See if this top container's destination is in any sequence
+                        $found = false;
+                        foreach ($portSequences as $startPort => $sequence) {
+                            if (in_array($topDestination, $sequence) || $startPort === $topDestination) {
+                                $portPriority[$topDestination] = 1000; // Arbitrary high number
+                                $found = true;
+                                break;
+                            }
+                        }
+
+                        if (!$found) {
+                            // If not found in any sequence, assign maximum priority
+                            $portPriority[$topDestination] = PHP_INT_MAX;
+                        }
                     }
 
                     // If top container's port visit is LATER than target container's
@@ -445,7 +527,7 @@ class RoomController extends Controller
                 }
 
                 if (!empty($blockingContainers)) {
-                    $isNextPort = ($targetDestination === $portSequence[0]);
+                    $isNextPort = !empty($portSequence) && ($targetDestination === $portSequence[0]);
 
                     // Store the violation details
                     $moveDetails[] = [
@@ -718,6 +800,14 @@ class RoomController extends Controller
                 }
 
                 foreach ($containersToMove as $container) {
+                    // Update the Container model to mark it as restowed
+                    $containerRecord = Container::find($container['id']);
+                    if ($containerRecord) {
+                        $containerRecord->last_processed_by = $nextPort;
+                        $containerRecord->last_processed_at = now();
+                        $containerRecord->save();
+                    }
+
                     $container['position'] = $nextPosition++;
                     $container['area'] = 'docks-' . $container['position'];
                     $dockArena['containers'][] = $container;
@@ -1616,118 +1706,6 @@ class RoomController extends Controller
         return response()->json($cardTemporary, 201);
     }
 
-    public function getCardTemporaries($roomId, $userId)
-    {
-        $shipBay = ShipBay::where('room_id', $roomId)
-            ->where('user_id', $userId)
-            ->first();
-
-        $currentRound = $shipBay->current_round;
-
-        // Use a direct join instead of relationship loading
-        $cardTemporaries = CardTemporary::select(
-            'card_temporaries.*',
-            'cards.type',
-            'cards.priority',
-            'cards.origin',
-            'cards.destination',
-            'cards.quantity',
-            'cards.revenue'
-        )
-            ->join('cards', function ($join) {
-                $join->on('cards.id', '=', 'card_temporaries.card_id')
-                    ->on('cards.deck_id', '=', 'card_temporaries.deck_id');
-            })
-            ->where([
-                'card_temporaries.room_id' => $roomId,
-                'card_temporaries.user_id' => $userId,
-                'card_temporaries.status' => 'selected',
-            ])
-            ->where(function ($query) use ($currentRound) {
-                $query->where('card_temporaries.round', $currentRound)
-                    ->orWhere('card_temporaries.is_backlog', true);
-            })
-            ->orderByRaw('card_temporaries.is_backlog DESC')
-            ->orderByRaw("CASE WHEN cards.priority = 'Committed' THEN 1 ELSE 2 END")
-            // ->orderByRaw("CAST(card_temporaries.card_id AS UNSIGNED) ASC")
-            ->get();
-
-        // Format the result to match what the frontend expects
-        $formattedResult = $cardTemporaries->map(function ($temp) {
-            // Create a card property with the joined data
-            $temp->card = [
-                'id' => $temp->card_id,
-                'deck_id' => $temp->deck_id,
-                'type' => $temp->type,
-                'priority' => $temp->priority,
-                'origin' => $temp->origin,
-                'destination' => $temp->destination,
-                'quantity' => $temp->quantity,
-                'revenue' => $temp->revenue
-            ];
-
-            // Remove duplicated attributes
-            unset($temp->type);
-            unset($temp->priority);
-            unset($temp->origin);
-            unset($temp->destination);
-            unset($temp->quantity);
-            unset($temp->revenue);
-
-            return $temp;
-        });
-
-        $room = Room::find($roomId);
-
-        // Get first card limit cards from formattedResult
-        $cardsLimit = $room->cards_limit_per_round;
-        if ($formattedResult->count() > $cardsLimit) {
-            $formattedResult = $formattedResult->take($cardsLimit);
-        }
-
-        return response()->json([
-            "cards" => $formattedResult,
-        ]);
-    }
-
-    public function acceptCardTemporary(Request $request)
-    {
-        $validated = $request->validate([
-            'room_id' => 'required|exists:rooms,id',
-            'card_temporary_id' => 'required|exists:cards,id',
-            'round' => 'required|integer|min:1',
-        ]);
-
-        $cardTemporary = CardTemporary::where('card_id', $validated['card_temporary_id'])
-            ->where('room_id', $validated['room_id'])
-            ->first();
-
-        $cardTemporary->status = 'accepted';
-        $cardTemporary->round = $validated['round'];
-        $cardTemporary->save();
-
-        return response()->json(['message' => 'Sales call card accepted.']);
-    }
-
-    public function rejectCardTemporary(Request $request)
-    {
-        $validated = $request->validate([
-            'room_id' => 'required|exists:rooms,id',
-            'card_temporary_id' => 'required|exists:cards,id',
-            'round' => 'required|integer|min:1',
-        ]);
-
-        $cardTemporary = CardTemporary::where('card_id', $validated['card_temporary_id'])
-            ->where('room_id', $validated['room_id'])
-            ->first();
-
-        $cardTemporary->status = 'rejected';
-        $cardTemporary->round = $validated['round'];
-        $cardTemporary->save();
-
-        return response()->json(['message' => 'Sales call card rejected.']);
-    }
-
     public function getUsersRanking($roomId)
     {
         try {
@@ -1745,6 +1723,7 @@ class RoomController extends Controller
                     'revenue' => $shipBay->revenue,
                     'penalty' => $shipBay->penalty,
                     'dock_warehouse_penalty' => $shipBay->dock_warehouse_penalty,
+                    'restowage_penalty' => $shipBay->restowage_penalty,
                     'total_revenue' => $shipBay->total_revenue,
                     'discharge_moves' => $shipBay->discharge_moves,
                     'load_moves' => $shipBay->load_moves,

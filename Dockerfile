@@ -1,4 +1,4 @@
-FROM php:8.3-fpm
+FROM php:8.2-fpm
 
 WORKDIR /var/www
 
@@ -28,6 +28,10 @@ RUN composer install --prefer-dist --no-scripts --no-autoloader
 # Copy application files
 COPY . .
 
+# Copy and make entrypoint script executable
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
 # Generate optimized autoload files
 RUN composer dump-autoload --optimize
 
@@ -37,4 +41,4 @@ RUN chown -R www-data:www-data storage bootstrap/cache \
 
 EXPOSE 8000
 
-CMD ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8000"]
+ENTRYPOINT ["docker-entrypoint.sh"]

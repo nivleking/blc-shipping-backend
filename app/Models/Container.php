@@ -17,11 +17,16 @@ class Container extends Model
         'type',
         'last_processed_by',
         'last_processed_at',
+        'is_restowed',
     ];
 
     protected $hidden = [
         'created_at',
         'updated_at',
+    ];
+
+    protected $casts = [
+        'is_restowed' => 'boolean',
     ];
 
     public function card()

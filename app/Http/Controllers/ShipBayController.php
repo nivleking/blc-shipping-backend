@@ -351,19 +351,38 @@ class ShipBayController extends Controller
             return response()->json(['message' => 'Ship bay not found'], 404);
         }
 
-        // Update the container's last_processed_by field
-        $container = Container::find($validatedData['container_id']);
-        if ($container) {
-            $container->last_processed_by = $shipBay->port;
-            $container->last_processed_at = now();
-            $container->save();
+        // Calculate move costs and apply free loading for restowed containers
+        $moveCost = Room::find($roomId)->move_cost;
+        $movesChargedForPenalty = $validatedData['count'];
+        $freeLoadApplied = false;
+
+        // Only check for restowed containers in load operations
+        if ($validatedData['move_type'] === 'load' && isset($validatedData['container_id'])) {
+            $container = Container::find($validatedData['container_id']);
+
+            // If this is a restowed container, the first load is free
+            if ($container && $container->is_restowed) {
+                $movesChargedForPenalty = max(0, $validatedData['count'] - 1);
+                $freeLoadApplied = true;
+
+                // Reset the restowed flag after using the free move
+                $container->is_restowed = false;
+                $container->save();
+            }
         }
 
-        $room = Room::find($roomId);
-        $moveCost = $room->move_cost;
+        // Update the container's last_processed_by field
+        if (isset($validatedData['container_id'])) {
+            $container = Container::find($validatedData['container_id']);
+            if ($container) {
+                $container->last_processed_by = $shipBay->port;
+                $container->last_processed_at = now();
+                $container->save();
+            }
+        }
 
-        // Calculate direct move penalty
-        $movePenalty = $validatedData['count'] * $moveCost;
+        // Calculate penalty based on the adjusted move count
+        $movePenalty = $movesChargedForPenalty * $moveCost;
 
         // Increment move counter
         if ($validatedData['move_type'] === 'discharge') {
@@ -396,66 +415,19 @@ class ShipBayController extends Controller
         // Update bay moves in ship bay
         $shipBay->bay_moves = json_encode($bayMoves);
 
-        // BAY PAIR FEATURE OFF
-        // Calculate bay pairs and extra moves
-        // $bayCount = $room->bay_count;
-        // $totalMoves = $shipBay->discharge_moves + $shipBay->load_moves;
-        // $idealCraneSplit = $room->ideal_crane_split ?? 2;
-        // $idealMovesPerCrane = $idealCraneSplit > 0 ? $totalMoves / $idealCraneSplit : 0;
-
-        // // Create bay pairs
-        // $bayPairs = [];
-
-        // // First bay is its own pair
-        // $bayPairs[] = [
-        //     'bays' => [0],
-        //     'total_moves' => $bayMoves[0]['total_moves'] ?? 0
-        // ];
-
-        // // Process remaining bays in pairs
-        // for ($i = 1; $i < $bayCount; $i += 2) {
-        //     if ($i + 1 < $bayCount) {
-        //         // Regular pair
-        //         $bayPairs[] = [
-        //             'bays' => [$i, $i + 1],
-        //             'total_moves' => ($bayMoves[$i]['total_moves'] ?? 0) +
-        //                 ($bayMoves[$i + 1]['total_moves'] ?? 0)
-        //         ];
-        //     } else {
-        //         // Last bay forms its own pair
-        //         $bayPairs[] = [
-        //             'bays' => [$i],
-        //             'total_moves' => $bayMoves[$i]['total_moves'] ?? 0
-        //         ];
-        //     }
-        // }
-
-        // // Find the bay pair with the most moves (long crane)
-        // $longCraneMoves = 0;
-        // foreach ($bayPairs as $pair) {
-        //     if ($pair['total_moves'] > $longCraneMoves) {
-        //         $longCraneMoves = $pair['total_moves'];
-        //     }
-        // }
-
-        // // Calculate extra moves on long crane
-        // $extraMovesOnLongCrane = max(0, $longCraneMoves - $idealMovesPerCrane);
-        // $extraMovesPenalty = round($extraMovesOnLongCrane) * $room->extra_moves_cost;
-
-        // // Update ship bay with all calculated values
-        // $shipBay->bay_pairs = json_encode($bayPairs);
-        // $shipBay->long_crane_moves = $longCraneMoves;
-        // $shipBay->extra_moves_on_long_crane = round($extraMovesOnLongCrane);
-
-        // // Update penalties
-        // $shipBay->extra_moves_penalty = $extraMovesPenalty; // Replace with current calculation
-
         $shipBay->penalty += $movePenalty;
         $shipBay->total_revenue = $shipBay->revenue - $shipBay->penalty - $shipBay->extra_moves_penalty;
 
         $shipBay->save();
 
-        return response()->json($shipBay);
+        return response()->json([
+            'message' => 'Moves incremented successfully',
+            'free_load_applied' => $freeLoadApplied,
+            'moves_charged' => $movesChargedForPenalty,
+            'actual_moves' => $validatedData['count'],
+            'penalty' => $movePenalty,
+            'shipBay' => $shipBay
+        ]);
     }
 
     public function incrementCards(Request $request, $roomId, $userId)

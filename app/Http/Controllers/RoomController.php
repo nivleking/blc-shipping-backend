@@ -803,11 +803,13 @@ class RoomController extends Controller
                     // Update the Container model to mark it as restowed
                     $containerRecord = Container::find($container['id']);
                     if ($containerRecord) {
-                        $containerRecord->last_processed_by = $nextPort;
+                        $containerRecord->is_restowed = true;
+                        $containerRecord->last_processed_by = $currentPort;
                         $containerRecord->last_processed_at = now();
                         $containerRecord->save();
                     }
 
+                    $container['is_restowed'] = true;
                     $container['position'] = $nextPosition++;
                     $container['area'] = 'docks-' . $container['position'];
                     $dockArena['containers'][] = $container;
@@ -1121,13 +1123,17 @@ class RoomController extends Controller
                     ];
                 }
             } else {
-                // ENHANCEMENT: Check if this is a foreign container (not accepted by this port)
-                // Get container's destination from its associated card
+                // Check if this is a foreign container (not accepted by this port)
                 $containerCard = $container->card;
 
                 if ($containerCard && $containerCard->destination != $currentPort) {
-                    // This is a container not destined for current port - should be penalized
-                    // We consider it's been in the dock for at least 1 round
+                    // NEW: Check if this is a restowed container
+                    if ($container->is_restowed) {
+                        // Skip penalty for restowed containers
+                        continue;
+                    }
+
+                    // Regular foreign container penalty
                     $penalty = $room->dock_warehouse_cost;
                     $totalPenalty += $penalty;
 

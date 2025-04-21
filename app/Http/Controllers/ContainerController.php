@@ -74,17 +74,17 @@ class ContainerController extends Controller
         return response()->json($containerDestinations);
     }
 
-    // public function getBatch(Request $request)
-    // {
-    //     $request->validate([
-    //         'containerIds' => 'required|array',
-    //         'containerIds.*' => 'exists:containers,id'
-    //     ]);
+    public function getContainersByRoom($roomId)
+    {
+        $containers = Container::whereHas('card', function ($query) use ($roomId) {
+            $query->whereHas('cardTemporaries', function ($q) use ($roomId) {
+                $q->where('room_id', $roomId)
+                    ->where('status', 'accepted');
+            });
+        })
+            ->with('card:id,destination,type,quantity,deck_id')
+            ->get();
 
-    //     $containers = Container::whereIn('id', $request->containerIds)
-    //         ->with('card:id,destination,type,priority,origin,quantity')
-    //         ->get();
-
-    //     return response()->json($containers);
-    // }
+        return response()->json($containers);
+    }
 }

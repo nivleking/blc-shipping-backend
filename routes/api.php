@@ -97,6 +97,7 @@ Route::delete('cards/{card}', [CardController::class, 'destroy']);
 // Admin - Container Routes
 // Route::apiResource('containers', ContainerController::class);
 Route::get('containers', [ContainerController::class, 'index']);
+Route::get('rooms/{roomId}/containers', [ContainerController::class, 'getContainersByRoom']);
 Route::post('/containers/destinations', [ContainerController::class, 'getContainerDestinations']);
 // Route::post('containers', [ContainerController::class, 'store']);
 Route::get('containers/{container}', [ContainerController::class, 'show']);

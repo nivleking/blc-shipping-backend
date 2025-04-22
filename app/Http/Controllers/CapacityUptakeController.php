@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StoreCapacityUptakeRequest;
 use App\Http\Requests\UpdateCapacityUptakeRequest;
 use App\Models\CapacityUptake;
+use App\Models\Card;
+use App\Models\CardTemporary;
 use App\Models\Container;
 use App\Models\Room;
 use App\Models\ShipBay;
@@ -123,6 +125,10 @@ class CapacityUptakeController extends Controller
             }
         }
 
+        // Calculate backlog containers from previous weeks
+        $backlogData = $this->calculateBacklogContainers($roomId, $userId, $week);
+        $responseData['backlog'] = $backlogData;
+
         // Asegurarse de que arena_end también esté decodificado si existe
         if (is_string($responseData['arena_end'])) {
             $responseData['arena_end'] = json_decode($responseData['arena_end'], true);
@@ -133,6 +139,85 @@ class CapacityUptakeController extends Controller
             'message' => 'Capacity uptake data retrieved successfully',
             'data' => $responseData,
         ], 200);
+    }
+
+    /**
+     * Calculate backlog containers (cards with is_backlog=true)
+     */
+    private function calculateBacklogContainers($roomId, $userId, $week)
+    {
+        // Default backlog structure
+        $backlog = [
+            'dry' => 0,
+            'reefer' => 0,
+            'total' => 0,
+            'cards' => []
+        ];
+
+        // Get all backlogged card temporaries for this user and room
+        $backloggedCards = CardTemporary::where([
+            'room_id' => $roomId,
+            'user_id' => $userId,
+            'is_backlog' => true,
+        ])
+            ->where(function ($query) use ($week) {
+                // Cards from current week that are backlogged, or backlogged in any week if week isn't specified
+                if ($week) {
+                    $query->where('round', $week);
+                }
+            })
+            ->get();
+
+        if ($backloggedCards->isEmpty()) {
+            return $backlog;
+        }
+
+        // Get all card IDs to fetch card details
+        $cardIds = $backloggedCards->pluck('card_id')->toArray();
+        $deckIds = $backloggedCards->pluck('deck_id')->toArray();
+
+        // Combine them to create card identification pairs
+        $cardPairs = [];
+        foreach ($backloggedCards as $temp) {
+            $cardPairs[] = [
+                'card_id' => $temp->card_id,
+                'deck_id' => $temp->deck_id
+            ];
+        }
+
+        // Fetch all corresponding cards with their details
+        $cards = [];
+        foreach ($cardPairs as $pair) {
+            $card = Card::where('id', $pair['card_id'])
+                ->where('deck_id', $pair['deck_id'])
+                ->first();
+
+            if ($card) {
+                $cards[] = $card;
+                // Count containers by type
+                if ($card->type === 'dry') {
+                    $backlog['dry'] += $card->quantity;
+                } else if ($card->type === 'reefer') {
+                    $backlog['reefer'] += $card->quantity;
+                }
+                // Add card data to backlog info
+                $backlog['cards'][] = [
+                    'id' => $card->id,
+                    'type' => $card->type,
+                    'priority' => $card->priority,
+                    'quantity' => $card->quantity,
+                    'origin' => $card->origin,
+                    'destination' => $card->destination,
+                    'revenue' => $card->revenue,
+                    'original_round' => $backloggedCards->where('card_id', $card->id)->first()->original_round
+                ];
+            }
+        }
+
+        // Calculate total backlogged containers
+        $backlog['total'] = $backlog['dry'] + $backlog['reefer'];
+
+        return $backlog;
     }
 
     /**
@@ -244,6 +329,9 @@ class CapacityUptakeController extends Controller
         $reeferCapacity = $reeferBayCount * $baySize['rows'] * $baySize['columns'];
         $dryCapacity = $totalBayCells - $reeferCapacity;
 
+        // Calculate backlog containers
+        $backlog = $this->calculateBacklogContainers($roomId, $userId, $week);
+
         return [
             'user_id' => $userId,
             'room_id' => $roomId,
@@ -253,6 +341,7 @@ class CapacityUptakeController extends Controller
             'accepted_cards' => [],
             'rejected_cards' => [],
             'arena_start' => [],
+            'backlog' => $backlog,
             'dry_containers_accepted' => 0,
             'reefer_containers_accepted' => 0,
             'committed_containers_accepted' => 0,

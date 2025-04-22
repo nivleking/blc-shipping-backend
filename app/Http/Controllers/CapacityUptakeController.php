@@ -160,7 +160,7 @@ class CapacityUptakeController extends Controller
 
         if ($request->card_action === 'accept') {
             $acceptedCards = $capacityUptake->accepted_cards ?? [];
-            $card['processed_at'] = now()->timestamp;
+            $card['handled_at'] = now()->timestamp;
             $acceptedCards[] = $card;
             $capacityUptake->accepted_cards = $acceptedCards;
 
@@ -177,6 +177,7 @@ class CapacityUptakeController extends Controller
             }
         } else {
             $rejectedCards = $capacityUptake->rejected_cards ?? [];
+            $card['handled_at'] = now()->timestamp;
             $rejectedCards[] = $card;
             $capacityUptake->rejected_cards = $rejectedCards;
 

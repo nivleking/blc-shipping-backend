@@ -28,7 +28,7 @@ class Room extends Model
         'bay_types',
         'total_rounds',
         'move_cost',
-        'dock_warehouse_cost',
+        'dock_warehouse_costs',
         'cards_limit_per_round',
         'cards_must_process_per_round',
         'swap_config'
@@ -41,7 +41,8 @@ class Room extends Model
         'bay_types' => 'array',
         'users' => 'array',
         'assigned_users' => 'array',
-        'swap_config'
+        'swap_config',
+        'dock_warehouse_costs' => 'array',
     ];
 
     public function users()

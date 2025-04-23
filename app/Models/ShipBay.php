@@ -22,6 +22,8 @@ class ShipBay extends Model
         'restowage_containers',
         'dock_warehouse_penalty',
         'dock_warehouse_containers',
+        'unrolled_penalty',
+        'unrolled_cards',
         'restowage_moves',
         'discharge_moves',
         'load_moves',
@@ -36,6 +38,7 @@ class ShipBay extends Model
         'arena' => 'array',
         'dock_warehouse_containers' => 'array',
         'restowage_containers' => 'array',
+        'unrolled_cards' => 'array',
     ];
 
     public function user()

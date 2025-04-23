@@ -59,16 +59,34 @@ class RoomController extends Controller
             'ship_layout' => 'required|exists:ship_layouts,id',
             'total_rounds' => 'required|integer|min:1',
             'move_cost' => 'required|integer|min:1',
-            'dock_warehouse_cost' => 'required|integer|min:1',
             'cards_limit_per_round' => 'required|integer|min:1',
             'cards_must_process_per_round' => 'required|integer|min:1',
-            'swap_config' => 'required|nullable|array'
+            'swap_config' => 'required|nullable|array',
+            'dock_warehouse_costs.dry.committed' => 'required|integer|min:0',
+            'dock_warehouse_costs.dry.non_committed' => 'required|integer|min:0',
+            'dock_warehouse_costs.reefer.committed' => 'required|integer|min:0',
+            'dock_warehouse_costs.reefer.non_committed' => 'required|integer|min:0',
             // 'extra_moves_cost' => 'required|integer|min:1',
             // 'ideal_crane_split' => 'required|integer|min:1',
         ]);
 
         $admin = $request->user();
         $layout = ShipLayout::findOrFail($validated['ship_layout']);
+
+        $dockWarehouseCosts = [
+            'default' => intval(($request->input('dock_warehouse_costs.dry.committed') +
+                $request->input('dock_warehouse_costs.dry.non_committed') +
+                $request->input('dock_warehouse_costs.reefer.committed') +
+                $request->input('dock_warehouse_costs.reefer.non_committed')) / 4),
+            'dry' => [
+                'committed' => $request->input('dock_warehouse_costs.dry.committed'),
+                'non_committed' => $request->input('dock_warehouse_costs.dry.non_committed')
+            ],
+            'reefer' => [
+                'committed' => $request->input('dock_warehouse_costs.reefer.committed'),
+                'non_committed' => $request->input('dock_warehouse_costs.reefer.non_committed')
+            ]
+        ];
 
         try {
             $room = Room::create([
@@ -86,10 +104,10 @@ class RoomController extends Controller
                 'bay_types' => json_encode($layout->bay_types),
                 'total_rounds' => $validated['total_rounds'],
                 'move_cost' => $validated['move_cost'],
-                'dock_warehouse_cost' => $validated['dock_warehouse_cost'],
                 'cards_limit_per_round' => $validated['cards_limit_per_round'],
                 'cards_must_process_per_round' => $validated['cards_must_process_per_round'],
-                'swap_config' => json_encode($validated['swap_config'] ?? [])
+                'swap_config' => json_encode($validated['swap_config'] ?? []),
+                'dock_warehouse_costs' => $dockWarehouseCosts,
                 // 'extra_moves_cost' => $validated['extra_moves_cost'],
                 // 'ideal_crane_split' => $validated['ideal_crane_split'],
             ]);
@@ -168,14 +186,19 @@ class RoomController extends Controller
             'cards_limit_per_round' => 'integer|min:1',
             'cards_must_process_per_round' => 'integer|min:1',
             'move_cost' => 'integer|min:1',
-            'dock_warehouse_cost' => 'integer|min:1',
             'assigned_users' => 'array',
             'assigned_users.*' => 'exists:users,id',
             'deck' => 'exists:decks,id',
             'ship_layout' => 'exists:ship_layouts,id',
+            'dock_warehouse_costs.dry.committed' => 'integer|min:0',
+            'dock_warehouse_costs.dry.non_committed' => 'integer|min:0',
+            'dock_warehouse_costs.reefer.committed' => 'integer|min:0',
+            'dock_warehouse_costs.reefer.non_committed' => 'integer|min:0',
             // 'extra_moves_cost' => 'integer|min:1',
             // 'ideal_crane_split' => 'integer|min:1',
         ]);
+        // if (isset($validated['extra_moves_cost'])) $room->extra_moves_cost = $validated['extra_moves_cost'];
+        // if (isset($validated['ideal_crane_split'])) $room->ideal_crane_split = $validated['ideal_crane_split'];
 
         if (isset($validated['name'])) $room->name = $validated['name'];
         if (isset($validated['description'])) $room->description = $validated['description'];
@@ -183,11 +206,6 @@ class RoomController extends Controller
         if (isset($validated['cards_limit_per_round'])) $room->cards_limit_per_round = $validated['cards_limit_per_round'];
         if (isset($validated['cards_must_process_per_round'])) $room->cards_must_process_per_round = $validated['cards_must_process_per_round'];
         if (isset($validated['move_cost'])) $room->move_cost = $validated['move_cost'];
-        // if (isset($validated['extra_moves_cost'])) $room->extra_moves_cost = $validated['extra_moves_cost'];
-        // if (isset($validated['ideal_crane_split'])) $room->ideal_crane_split = $validated['ideal_crane_split'];
-        if (isset($validated['dock_warehouse_cost'])) {
-            $room->dock_warehouse_cost = $validated['dock_warehouse_cost'];
-        }
 
         if (isset($validated['assigned_users'])) {
             $room->assigned_users = json_encode($validated['assigned_users']);
@@ -203,6 +221,38 @@ class RoomController extends Controller
             $room->bay_size = json_encode($layout->bay_size);
             $room->bay_count = $layout->bay_count;
             $room->bay_types = json_encode($layout->bay_types);
+        }
+
+        $dockWarehouseCostsUpdated = isset($validated['dock_warehouse_costs.dry.committed']) ||
+            isset($validated['dock_warehouse_costs.dry.non_committed']) ||
+            isset($validated['dock_warehouse_costs.reefer.committed']) ||
+            isset($validated['dock_warehouse_costs.reefer.non_committed']);
+
+        if ($dockWarehouseCostsUpdated) {
+            // Get current costs
+            $currentCosts = $room->dock_warehouse_costs;
+
+            // Update the values that were provided
+            if (isset($validated['dock_warehouse_costs.dry.committed'])) {
+                $currentCosts['dry']['committed'] = $validated['dock_warehouse_costs.dry.committed'];
+            }
+            if (isset($validated['dock_warehouse_costs.dry.non_committed'])) {
+                $currentCosts['dry']['non_committed'] = $validated['dock_warehouse_costs.dry.non_committed'];
+            }
+            if (isset($validated['dock_warehouse_costs.reefer.committed'])) {
+                $currentCosts['reefer']['committed'] = $validated['dock_warehouse_costs.reefer.committed'];
+            }
+            if (isset($validated['dock_warehouse_costs.reefer.non_committed'])) {
+                $currentCosts['reefer']['non_committed'] = $validated['dock_warehouse_costs.reefer.non_committed'];
+            }
+
+            // Recalculate default as average
+            $currentCosts['default'] = intval(($currentCosts['dry']['committed'] +
+                $currentCosts['dry']['non_committed'] +
+                $currentCosts['reefer']['committed'] +
+                $currentCosts['reefer']['non_committed']) / 4);
+
+            $room->dock_warehouse_costs = $currentCosts;
         }
 
         $room->save();
@@ -321,7 +371,7 @@ class RoomController extends Controller
         return response()->json($room);
     }
 
-    private function calculateRestowagePenalties($room, $userId)
+    public function calculateRestowagePenalties($room, $userId)
     {
         $shipBay = ShipBay::where('room_id', $room->id)
             ->where('user_id', $userId)
@@ -693,31 +743,24 @@ class RoomController extends Controller
                 ]
             );
 
+            // Calculate unrolled penalties for cards not handled in this round
+            $unrolledCardsContainers = $this->calculateUnrolledPenalties($room, $userId, $shipBay, $shipBay->current_round);
+            $shipBay->unrolled_penalty = $unrolledCardsContainers['penalty'];
+            $shipBay->unrolled_cards = $unrolledCardsContainers['unrolled_cards'];
+
             // Calculate penalties for containers sitting in dock
             $dockWarehouseDetails = $this->calculateDockWarehouse($room, $userId, $shipBay->current_round + 1);
-
-            // Calculate restowage penalties
-            $restowageDetails = $this->calculateRestowagePenalties($room, $userId);
-
-            // Add or update backlog penalty
-            if (!isset($shipBay->dock_warehouse_penalty)) {
-                $shipBay->dock_warehouse_penalty = 0;
-            }
-
             $shipBay->dock_warehouse_penalty = $dockWarehouseDetails['penalty'];
             $shipBay->dock_warehouse_containers = $dockWarehouseDetails['dock_warehouse_containers'];
 
-            // Add or update restowage penalty
-            if (!isset($shipBay->restowage_penalty)) {
-                $shipBay->restowage_penalty = 0;
-            }
-
+            // Calculate restowage penalties
+            $restowageDetails = $this->calculateRestowagePenalties($room, $userId);
             $shipBay->restowage_penalty += $restowageDetails['penalty'];
             $shipBay->restowage_moves += $restowageDetails['moves'];
             $shipBay->restowage_containers = $restowageDetails['containers'];
 
             // Update total penalty
-            $shipBay->penalty = $shipBay->penalty + ($shipBay->dock_warehouse_penalty ?? 0) + ($shipBay->restowage_penalty ?? 0);
+            $shipBay->penalty = $shipBay->penalty + ($shipBay->dock_warehouse_penalty ?? 0) + ($shipBay->restowage_penalty ?? 0) + ($shipBay->unrolled_penalty ?? 0);
 
             // Update total revenue calculation (subtract penalties)
             $shipBay->total_revenue = ($shipBay->revenue ?? 0) - ($shipBay->penalty ?? 0);
@@ -983,6 +1026,134 @@ class RoomController extends Controller
         ]);
     }
 
+    /**
+     * Calculate penalties for cards that were neither accepted nor rejected (unrolled)
+     */
+    public function calculateUnrolledPenalties(Room $room, $userId, $shipBay, $currentRound)
+    {
+        // Find cards that were selected but not processed (neither accepted nor rejected)
+        $unprocessedCards = CardTemporary::join('cards', function ($join) {
+            $join->on('cards.id', '=', 'card_temporaries.card_id')
+                ->on('cards.deck_id', '=', 'card_temporaries.deck_id');
+        })
+            ->where([
+                'card_temporaries.user_id' => $userId,
+                'card_temporaries.room_id' => $room->id,
+                'card_temporaries.status' => 'selected',
+                'card_temporaries.round' => $currentRound,
+            ])
+            ->select('card_temporaries.*', 'cards.type', 'cards.priority', 'cards.quantity', 'cards.revenue')
+            ->get();
+
+        if ($unprocessedCards->isEmpty()) {
+            return;
+        }
+
+        // Get penalties from Market Intelligence
+        $penalties = $this->getPenaltiesFromMarketIntelligence($room);
+
+        // Calculate penalty based on container type and commitment
+        $totalPenalty = 0;
+        $unrolledCards = [];
+
+        foreach ($unprocessedCards as $cardTemp) {
+            $isCommitted = strtolower($cardTemp->priority) === 'committed';
+            $isDry = strtolower($cardTemp->type) === 'dry';
+            $quantity = $cardTemp->quantity ?? 1;
+
+            // Determine the appropriate penalty rate
+            $penaltyRate = 0;
+            if ($isDry) {
+                $penaltyRate = $isCommitted
+                    ? $penalties['dry']['committed']
+                    : $penalties['dry']['non_committed'];
+            } else {
+                $penaltyRate = $isCommitted
+                    ? $penalties['reefer']['committed']
+                    : $penalties['reefer']['non_committed'];
+            }
+
+            // Calculate penalty for this card
+            $cardPenalty = $penaltyRate * $quantity;
+            $totalPenalty += $cardPenalty;
+
+            // Track unrolled cards for reporting
+            $unrolledCards[] = [
+                'card_id' => $cardTemp->card_id,
+                'deck_id' => $cardTemp->deck_id,
+                'type' => $cardTemp->type,
+                'priority' => $cardTemp->priority,
+                'quantity' => $quantity,
+                'revenue' => $cardTemp->revenue,
+                'penalty' => $cardPenalty,
+                'penalty_rate' => $penaltyRate,
+                'round' => $currentRound
+            ];
+        }
+
+        return [
+            'penalty' => $totalPenalty,
+            'unrolled_cards' => $unrolledCards,
+            'rates' => [
+                'dry_committed' => $penalties['dry']['committed'],
+                'dry_non_committed' => $penalties['dry']['non_committed'],
+                'reefer_committed' => $penalties['reefer']['committed'],
+                'reefer_non_committed' => $penalties['reefer']['non_committed']
+            ]
+        ];
+    }
+
+    /**
+     * Get penalties from Market Intelligence for the room's deck
+     * 
+     * @param Room $room
+     * @return array Penalties in the format expected by the penalty calculation
+     */
+    private function getPenaltiesFromMarketIntelligence(Room $room)
+    {
+        // Get deck ID from room
+        $deckId = $room->deck_id;
+
+        // Default penalties if Market Intelligence not found
+        $defaultPenalties = [
+            'default' => 50000,
+            'dry' => [
+                'committed' => 1600000,
+                'non_committed' => 800000
+            ],
+            'reefer' => [
+                'committed' => 2400000,
+                'non_committed' => 160000
+            ]
+        ];
+
+        if (!$deckId) {
+            return $room->dock_warehouse_costs ?? $defaultPenalties;
+        }
+
+        // Get Market Intelligence for this deck
+        $marketIntelligence = MarketIntelligence::where('deck_id', $deckId)->first();
+
+        if (!$marketIntelligence || !$marketIntelligence->penalties) {
+            return $room->dock_warehouse_costs ?? $defaultPenalties;
+        }
+
+        $miPenalties = $marketIntelligence->penalties;
+
+        // Convert Market Intelligence penalties format to the format needed by our code
+        return [
+            'default' => $miPenalties['default'] ?? 50000,
+            'dry' => [
+                'committed' => $miPenalties['dry_committed'] ?? 1600000,
+                'non_committed' => $miPenalties['dry_non_committed'] ?? 800000
+            ],
+            'reefer' => [
+                'committed' => $miPenalties['reefer_committed'] ?? 2400000,
+                'non_committed' => $miPenalties['reefer_non_committed'] ?? 160000
+            ]
+        ];
+    }
+
     // Add this function after moveRestowageContainers
     private function applyGravityToStacks($arena)
     {
@@ -1047,7 +1218,7 @@ class RoomController extends Controller
         return $arena;
     }
 
-    private function calculateDockWarehouse($room, $userId, $currentRound)
+    public function calculateDockWarehouse($room, $userId, $currentRound)
     {
         // Get ship dock to find containers that weren't moved
         $shipDock = ShipDock::where('room_id', $room->id)
@@ -1092,9 +1263,22 @@ class RoomController extends Controller
         $dockWarehouseContainers = [];
         $totalPenalty = 0;
 
+        // Get dock warehouse costs from the room
+        $dockWarehouseCosts = $room->dock_warehouse_costs;
+
         foreach ($containerIds as $containerId) {
             $container = Container::find($containerId);
             if (!$container) continue;
+
+            $containerType = strtolower($container->type ?? 'dry');
+            $isCommitted = strtolower($container->card->priority ?? '') === 'committed';
+            $priorityType = $isCommitted ? 'committed' : 'non_committed';
+            if (isset($dockWarehouseCosts[$containerType][$priorityType])) {
+                $penalty = $dockWarehouseCosts[$containerType][$priorityType];
+            } else {
+                // Fallback to default value if specific config not found
+                $penalty = $dockWarehouseCosts['default'] ?? 50000;
+            }
 
             // Check if this container belongs to an accepted card
             $cardTemp = CardTemporary::where('room_id', $room->id)
@@ -1110,7 +1294,6 @@ class RoomController extends Controller
                 $weeksPending = $currentRound - $cardTemp->round;
 
                 if ($weeksPending > 0) {
-                    $penalty = $room->dock_warehouse_cost;
                     $totalPenalty += $penalty;
 
                     $dockWarehouseContainers[] = [
@@ -1134,7 +1317,6 @@ class RoomController extends Controller
                     }
 
                     // Regular foreign container penalty
-                    $penalty = $room->dock_warehouse_cost;
                     $totalPenalty += $penalty;
 
                     $dockWarehouseContainers[] = [

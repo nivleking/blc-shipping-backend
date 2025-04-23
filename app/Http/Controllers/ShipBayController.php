@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\CapacityUptake;
 use App\Models\Card;
 use App\Models\CardTemporary;
 use App\Models\Container;
@@ -12,6 +13,93 @@ use Illuminate\Support\Facades\DB;
 
 class ShipBayController extends Controller
 {
+    /**
+     * Get financial summary including estimated penalties
+     */
+    public function getFinancialSummary($roomId, $userId)
+    {
+        $shipBay = ShipBay::where('room_id', $roomId)
+            ->where('user_id', $userId)
+            ->first();
+
+        if (!$shipBay) {
+            return response()->json([
+                'error' => 'Ship bay not found'
+            ], 404);
+        }
+
+        $room = Room::find($roomId);
+        $moveCost = $room ? $room->move_cost : 0;
+
+        // Get capacity uptake for current round to calculate revenue from accepted cards
+        $currentRound = $shipBay->current_round;
+        $capacityUptake = CapacityUptake::where('room_id', $roomId)
+            ->where('user_id', $userId)
+            ->where('week', $currentRound)
+            ->first();
+
+        // Get the controller instance to calculate penalties
+        $roomController = new RoomController();
+
+        // Calculate unrolled penalties
+        $unrolledPenaltyData = $roomController->calculateUnrolledPenalties($room, $userId, $shipBay, $shipBay->current_round);
+        $unrolledPenalty = $unrolledPenaltyData['penalty'] ?? 0;
+
+        // Calculate dock warehouse penalties
+        $dockWarehouseData = $roomController->calculateDockWarehouse($room, $userId, $shipBay->current_round + 1);
+        $dockWarehousePenalty = $dockWarehouseData['penalty'] ?? 0;
+
+        // Calculate restowage penalties
+        $restowageData = $roomController->calculateRestowagePenalties($room, $userId);
+        $restowagePenalty = $restowageData['penalty'] ?? 0;
+
+        // Calculate total moves cost
+        $totalMoves = $shipBay->discharge_moves + $shipBay->load_moves;
+        $movesPenalty = $totalMoves * $moveCost;
+
+        // Calculate total penalties
+        $totalPenalty = $movesPenalty + $dockWarehousePenalty + $unrolledPenalty + $restowagePenalty;
+
+        // Get revenue from capacity uptake accepted cards
+        $revenue = 0;
+        if ($capacityUptake && is_array($capacityUptake->accepted_cards)) {
+            foreach ($capacityUptake->accepted_cards as $card) {
+                if (isset($card['revenue'])) {
+                    $revenue += (int)$card['revenue'];
+                }
+            }
+        } else {
+            // Fallback to ShipBay revenue if capacity uptake data isn't available
+            $revenue = $shipBay->revenue ?? 0;
+        }
+
+        $finalRevenue = $revenue - $totalPenalty;
+
+        // Get cost rates from room model
+        $dockWarehouseCosts = $room ? $room->dock_warehouse_costs : [];
+        $restowageCost = $room ? $room->restowage_cost : 0;
+
+        // Get unrolled cost rates from market intelligence
+        $unrolledCostRates = $unrolledPenaltyData['rates'] ?? [];
+
+        return response()->json([
+            'dock_warehouse_costs' => $dockWarehouseCosts,
+            'restowage_cost' => $restowageCost,
+            'unrolled_cost_rates' => $unrolledCostRates,
+            'revenue' => $revenue,
+            'load_moves' => $shipBay->load_moves,
+            'discharge_moves' => $shipBay->discharge_moves,
+            'total_moves' => $totalMoves,
+            'move_cost' => $moveCost,
+            'moves_penalty' => $movesPenalty,
+            'dock_warehouse_penalty' => $dockWarehousePenalty,
+            'unrolled_penalty' => $unrolledPenalty,
+            'restowage_penalty' => $restowagePenalty,
+            'total_penalty' => $totalPenalty,
+            'final_revenue' => $finalRevenue
+        ]);
+    }
+
     public function index()
     {
         //

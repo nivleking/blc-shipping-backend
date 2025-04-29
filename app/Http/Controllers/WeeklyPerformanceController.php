@@ -168,18 +168,47 @@ class WeeklyPerformanceController extends Controller
         // Get all weeks' performance for this user/room
         $performances = WeeklyPerformance::where('room_id', $roomId)
             ->where('user_id', $userId)
-            ->orderBy('week')
+            ->orderBy('week', 'asc')
             ->get();
 
         // Calculate cumulative revenue for trend analysis
         $cumulativeRevenue = 0;
-        foreach ($performances as &$performance) {
+        $enhancedPerformances = [];
+
+        foreach ($performances as $performance) {
+            // Parse JSON fields if they're stored as strings
+            $unrolledCounts = is_string($performance->unrolled_container_counts)
+                ? json_decode($performance->unrolled_container_counts, true)
+                : $performance->unrolled_container_counts;
+
+            $dockWarehouseCounts = is_string($performance->dock_warehouse_container_counts)
+                ? json_decode($performance->dock_warehouse_container_counts, true)
+                : $performance->dock_warehouse_container_counts;
+
+            // Update cumulative revenue
             $cumulativeRevenue += $performance->net_result;
-            $performance->cumulative_revenue = $cumulativeRevenue;
+
+            // Build enhanced performance data
+            $enhancedPerformances[] = [
+                'week' => $performance->week,
+                'discharge_moves' => $performance->discharge_moves,
+                'load_moves' => $performance->load_moves,
+                'restowage_moves' => $performance->restowage_moves,
+                'restowage_penalty' => $performance->restowage_penalty,
+                'unrolled_container_counts' => $unrolledCounts,
+                'dock_warehouse_container_counts' => $dockWarehouseCounts,
+                'total_penalty' => $performance->total_penalty,
+                'dock_warehouse_penalty' => $performance->dock_warehouse_penalty,
+                'unrolled_penalty' => $performance->unrolled_penalty,
+                'revenue' => $performance->revenue,
+                'net_result' => $performance->net_result,
+                'cumulative_revenue' => $cumulativeRevenue
+            ];
         }
 
         return response()->json([
-            'data' => $performances
+            'data' => $enhancedPerformances,
+            'total_cumulative_revenue' => $cumulativeRevenue
         ], 200);
     }
 

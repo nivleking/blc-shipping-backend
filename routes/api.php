@@ -186,6 +186,7 @@ Route::delete('simulation-logs/{simulationLog}', [SimulationLogController::class
 Route::get('simulation-logs/{roomId}/{userId}', [SimulationLogController::class, 'getByRoomAndUser']);
 
 // Weekly Performance Routes
+Route::get('/rooms/{roomId}/weekly-performance-all/{userId}', [WeeklyPerformanceController::class, 'getAllWeeklyPerformance']);
 Route::get('/rooms/{roomId}/weekly-performance/{userId}/{week}', [WeeklyPerformanceController::class, 'getWeeklyPerformance']);
 Route::post('/rooms/{roomId}/weekly-performance/{userId}/{week}', [WeeklyPerformanceController::class, 'updateWeeklyPerformance']);
 

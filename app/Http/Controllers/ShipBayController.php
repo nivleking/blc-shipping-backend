@@ -8,97 +8,13 @@ use App\Models\CardTemporary;
 use App\Models\Container;
 use App\Models\Room;
 use App\Models\ShipBay;
+use App\Models\WeeklyPerformance;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class ShipBayController extends Controller
 {
-    /**
-     * Get financial summary including estimated penalties
-     */
-    public function getFinancialSummary($roomId, $userId)
-    {
-        $shipBay = ShipBay::where('room_id', $roomId)
-            ->where('user_id', $userId)
-            ->first();
 
-        if (!$shipBay) {
-            return response()->json([
-                'error' => 'Ship bay not found'
-            ], 404);
-        }
-
-        $room = Room::find($roomId);
-        $moveCost = $room ? $room->move_cost : 0;
-
-        // Get capacity uptake for current round to calculate revenue from accepted cards
-        $currentRound = $shipBay->current_round;
-        $capacityUptake = CapacityUptake::where('room_id', $roomId)
-            ->where('user_id', $userId)
-            ->where('week', $currentRound)
-            ->first();
-
-        // Get the controller instance to calculate penalties
-        $roomController = new RoomController();
-
-        // Calculate unrolled penalties
-        $unrolledPenaltyData = $roomController->calculateUnrolledPenalties($room, $userId, $shipBay, $shipBay->current_round);
-        $unrolledPenalty = $unrolledPenaltyData['penalty'] ?? 0;
-
-        // Calculate dock warehouse penalties
-        $dockWarehouseData = $roomController->calculateDockWarehouse($room, $userId, $shipBay->current_round + 1);
-        $dockWarehousePenalty = $dockWarehouseData['penalty'] ?? 0;
-
-        // Calculate restowage penalties
-        $restowageData = $roomController->calculateRestowagePenalties($room, $userId);
-        $restowagePenalty = $restowageData['penalty'] ?? 0;
-
-        // Calculate total moves cost
-        $totalMoves = $shipBay->discharge_moves + $shipBay->load_moves;
-        $movesPenalty = $totalMoves * $moveCost;
-
-        // Calculate total penalties
-        $totalPenalty = $movesPenalty + $dockWarehousePenalty + $unrolledPenalty + $restowagePenalty;
-
-        // Get revenue from capacity uptake accepted cards
-        $revenue = 0;
-        if ($capacityUptake && is_array($capacityUptake->accepted_cards)) {
-            foreach ($capacityUptake->accepted_cards as $card) {
-                if (isset($card['revenue'])) {
-                    $revenue += (int)$card['revenue'];
-                }
-            }
-        } else {
-            // Fallback to ShipBay revenue if capacity uptake data isn't available
-            $revenue = $shipBay->revenue ?? 0;
-        }
-
-        $finalRevenue = $revenue - $totalPenalty;
-
-        // Get cost rates from room model
-        $dockWarehouseCosts = $room ? $room->dock_warehouse_costs : [];
-        $restowageCost = $room ? $room->restowage_cost : 0;
-
-        // Get unrolled cost rates from market intelligence
-        $unrolledCostRates = $unrolledPenaltyData['rates'] ?? [];
-
-        return response()->json([
-            'dock_warehouse_costs' => $dockWarehouseCosts,
-            'restowage_cost' => $restowageCost,
-            'unrolled_cost_rates' => $unrolledCostRates,
-            'revenue' => $revenue,
-            'load_moves' => $shipBay->load_moves,
-            'discharge_moves' => $shipBay->discharge_moves,
-            'total_moves' => $totalMoves,
-            'move_cost' => $moveCost,
-            'moves_penalty' => $movesPenalty,
-            'dock_warehouse_penalty' => $dockWarehousePenalty,
-            'unrolled_penalty' => $unrolledPenalty,
-            'restowage_penalty' => $restowagePenalty,
-            'total_penalty' => $totalPenalty,
-            'final_revenue' => $finalRevenue
-        ]);
-    }
 
     public function index()
     {
@@ -322,8 +238,9 @@ class ShipBayController extends Controller
         // Convert 2D array to flat format
         $containers = [];
         $totalContainers = 0;
+        $containerIds = [];
 
-        // Process each bay in the arena
+        // First pass: extract container IDs and basic positional data
         for ($bayIndex = 0; $bayIndex < $bayCount; $bayIndex++) {
             if (!isset($arenaInput[$bayIndex])) continue;
 
@@ -332,23 +249,67 @@ class ShipBayController extends Controller
             // Process each cell in the bay
             for ($rowIndex = 0; $rowIndex < $baySize['rows']; $rowIndex++) {
                 for ($colIndex = 0; $colIndex < $baySize['columns']; $colIndex++) {
-                    // Calculate position using the formula: (bayIndex * totalCellsPerBay) + (rowIndex * columns) + colIndex
+                    // Calculate position using the formula
                     $position = ($bayIndex * $baySize['rows'] * $baySize['columns']) + ($rowIndex * $baySize['columns']) + $colIndex;
 
                     // Get the container at this position
                     $container = $bayData[$rowIndex][$colIndex] ?? null;
 
                     if ($container) {
+                        $containerIds[] = $container;
                         $containers[] = [
                             'id' => $container,
                             'position' => $position,
                             'bay' => $bayIndex,
                             'row' => $rowIndex,
-                            'col' => $colIndex
+                            'col' => $colIndex,
                         ];
                         $totalContainers++;
                     }
                 }
+            }
+        }
+
+        // If no containers found, return empty result
+        if (empty($containerIds)) {
+            return [
+                'containers' => [],
+                'totalContainers' => 0
+            ];
+        }
+
+        // Get container metadata including card relationships
+        $containerMetadata = DB::table('containers')
+            ->select(
+                'containers.id',
+                'containers.type',
+                'containers.card_id',
+                'cards.id as card_id',
+                'cards.origin',
+                'cards.destination',
+                'cards.type as card_type'
+            )
+            ->leftJoin('cards', function ($join) {
+                $join->on('containers.card_id', '=', 'cards.id')
+                    ->on('containers.deck_id', '=', 'cards.deck_id');
+            })
+            ->whereIn('containers.id', $containerIds)
+            ->get()
+            ->keyBy('id');
+
+        // Enhance containers with metadata
+        foreach ($containers as &$container) {
+            $containerId = $container['id'];
+            if (isset($containerMetadata[$containerId])) {
+                $metadata = $containerMetadata[$containerId];
+
+                // Add container type
+                $container['type'] = $metadata->type ?? 'dry';
+
+                // Add card related information
+                $container['cardId'] = $metadata->card_id ?? null;
+                $container['origin'] = $metadata->origin ?? null;
+                $container['destination'] = $metadata->destination ?? null;
             }
         }
 
@@ -429,6 +390,7 @@ class ShipBayController extends Controller
             'count' => 'required|integer|min:1',
             'bay_index' => 'required|integer|min:0',
             'container_id' => 'sometimes|exists:containers,id',
+            'arena' => 'sometimes|array',
         ]);
 
         $shipBay = ShipBay::where('room_id', $roomId)
@@ -439,27 +401,66 @@ class ShipBayController extends Controller
             return response()->json(['message' => 'Ship bay not found'], 404);
         }
 
-        // Calculate move costs and apply free loading for restowed containers
-        $moveCost = Room::find($roomId)->move_cost;
+        $room = Room::find($roomId);
+        $roomController = new RoomController();
+
+        // ======= PHASE 1: CAPTURE COMPLETE PREVIOUS STATE =======
+        $previousRestowageData = $roomController->calculateRestowagePenalties($room, $userId);
+        $previousBayMoves = json_decode($shipBay->bay_moves ?? '{}', true);
+
+        $previousContainerPositions = [];
+        if (isset($previousArena['containers']) && is_array($previousArena['containers'])) {
+            foreach ($previousArena['containers'] as $container) {
+                $previousContainerPositions[$container['id']] = [
+                    'position' => $container['position'],
+                    'bay' => $container['bay'] ?? null,
+                    'row' => $container['row'] ?? null,
+                    'col' => $container['col'] ?? null
+                ];
+            }
+        }
+
+        $previousRestowageBays = [];
+        $previousRestowageContainers = [];
+        $previousBlockingContainers = [];
+
+        if (isset($previousRestowageData['containers']) && is_array($previousRestowageData['containers'])) {
+            foreach ($previousRestowageData['containers'] as $container) {
+                if (isset($container['stack'])) {
+                    $parts = explode('-', $container['stack']);
+                    if (count($parts) >= 1) {
+                        $bayIndex = (int)$parts[0];
+                        $previousRestowageBays[$bayIndex] = true;
+                    }
+                }
+                if (isset($container['container_id'])) {
+                    $previousRestowageContainers[$container['container_id']] = $container;
+                }
+                if (isset($container['blocking_container_id'])) {
+                    $previousBlockingContainers[$container['blocking_container_id']] = true;
+                }
+            }
+        }
+
+        // ======= PHASE 2: PROCESS THE MOVE =======
+        $movingContainerId = $validatedData['container_id'] ?? null;
+        $wasBlockingContainer = $movingContainerId && isset($previousBlockingContainers[$movingContainerId]);
+        $containerPreviousPosition = $movingContainerId ? ($previousContainerPositions[$movingContainerId] ?? null) : null;
+
+        $moveCost = $room->move_cost;
         $movesChargedForPenalty = $validatedData['count'];
         $freeLoadApplied = false;
 
-        // Only check for restowed containers in load operations
         if ($validatedData['move_type'] === 'load' && isset($validatedData['container_id'])) {
             $container = Container::find($validatedData['container_id']);
-
-            // If this is a restowed container, the first load is free
             if ($container && $container->is_restowed) {
                 $movesChargedForPenalty = max(0, $validatedData['count'] - 1);
                 $freeLoadApplied = true;
-
-                // Reset the restowed flag after using the free move
                 $container->is_restowed = false;
                 $container->save();
             }
         }
 
-        // Update the container's last_processed_by field
         if (isset($validatedData['container_id'])) {
             $container = Container::find($validatedData['container_id']);
             if ($container) {
@@ -469,22 +470,19 @@ class ShipBayController extends Controller
             }
         }
 
-        // Calculate penalty based on the adjusted move count
-        $movePenalty = $movesChargedForPenalty * $moveCost;
-
-        // Increment move counter
         if ($validatedData['move_type'] === 'discharge') {
             $shipBay->discharge_moves += $validatedData['count'];
         } else {
             $shipBay->load_moves += $validatedData['count'];
         }
 
-        // Also track bay-specific moves
         $bayMoves = json_decode($shipBay->bay_moves ?? '{}', true);
         if (!isset($bayMoves[$validatedData['bay_index']])) {
             $bayMoves[$validatedData['bay_index']] = [
                 'discharge_moves' => 0,
-                'load_moves' => 0
+                'load_moves' => 0,
+                'restowage_container_count' => 0,
+                'restowage_moves' => 0
             ];
         }
 
@@ -494,19 +492,118 @@ class ShipBayController extends Controller
             $bayMoves[$validatedData['bay_index']]['load_moves'] += $validatedData['count'];
         }
 
-        // Calculate total moves per bay
-        foreach ($bayMoves as $index => $moves) {
-            $bayMoves[$index]['total_moves'] =
-                ($moves['discharge_moves'] ?? 0) + ($moves['load_moves'] ?? 0);
+        // ======= PHASE 3: RELOAD ARENA TERBARU (PASTIKAN SUDAH SINKRON) =======
+        $shipBay->save();
+        $shipBay->refresh();
+        $currentArena = json_decode($shipBay->arena, true);
+
+        $currentContainerPositions = [];
+        if (isset($currentArena['containers']) && is_array($currentArena['containers'])) {
+            foreach ($currentArena['containers'] as $container) {
+                $currentContainerPositions[$container['id']] = [
+                    'position' => $container['position'],
+                    'bay'      => $container['bay'] ?? null,
+                    'row'      => $container['row'] ?? null,
+                    'col'      => $container['col'] ?? null
+                ];
+            }
         }
 
-        // Update bay moves in ship bay
+        $movedContainers = [];
+        foreach ($previousContainerPositions as $id => $prev) {
+            if (isset($currentContainerPositions[$id])) {
+                $curr = $currentContainerPositions[$id];
+                if ($prev['position'] !== $curr['position'] || $prev['bay'] !== $curr['bay']) {
+                    $movedContainers[$id] = ['from' => $prev, 'to' => $curr];
+                }
+            } else {
+                $movedContainers[$id] = ['from' => $prev, 'to' => null];
+            }
+        }
+        foreach ($currentContainerPositions as $id => $curr) {
+            if (!isset($previousContainerPositions[$id])) {
+                $movedContainers[$id] = ['from' => null, 'to' => $curr];
+            }
+        }
+
+        // HITUNG RESTOWAGE BARU BERDASARKAN ARENA TERKINI =======
+        $newRestowageData = $roomController->calculateRestowagePenalties($room, $userId);
+
+        $currentRestowageBays = [];
+        $currentBlockingContainers = [];
+        if (isset($newRestowageData['containers']) && is_array($newRestowageData['containers'])) {
+            foreach ($newRestowageData['containers'] as $container) {
+                if (isset($container['stack'])) {
+                    $parts = explode('-', $container['stack']);
+                    if (count($parts) >= 1) {
+                        $bayIndex = (int)$parts[0];
+                        $currentRestowageBays[$bayIndex] = true;
+                    }
+                }
+                if (isset($container['blocking_container_id'])) {
+                    $currentBlockingContainers[$container['blocking_container_id']] = true;
+                }
+            }
+        }
+
+        $fixedBlockingContainer = $wasBlockingContainer && !isset($currentBlockingContainers[$movingContainerId]);
+
+        // UPDATE BAY MOVES DENGAN RESTOWAGE DATA =======
+        $restowageByBay = [];
+        foreach ($newRestowageData['containers'] as $container) {
+            if (isset($container['stack'])) {
+                $parts = explode('-', $container['stack']);
+                if (count($parts) >= 1) {
+                    $bayIndex = (int)$parts[0];
+                    if (!isset($restowageByBay[$bayIndex])) {
+                        $restowageByBay[$bayIndex] = [
+                            'restowage_container_count' => 0,
+                            'restowage_moves' => 0,
+                            'counted_containers' => []
+                        ];
+                    }
+                    $blockingId = $container['blocking_container_id'];
+                    if (!isset($restowageByBay[$bayIndex]['counted_containers'][$blockingId])) {
+                        $restowageByBay[$bayIndex]['restowage_container_count']++;
+                        $restowageByBay[$bayIndex]['restowage_moves'] += 2;
+                        $restowageByBay[$bayIndex]['counted_containers'][$blockingId] = true;
+                    }
+                }
+            }
+        }
+
+        foreach ($restowageByBay as $bayIndex => $data) {
+            if (!isset($bayMoves[$bayIndex])) {
+                $bayMoves[$bayIndex] = [
+                    'discharge_moves' => 0,
+                    'load_moves' => 0
+                ];
+            }
+            $bayMoves[$bayIndex]['restowage_container_count'] = $data['restowage_container_count'];
+            $bayMoves[$bayIndex]['restowage_moves'] = $data['restowage_moves'];
+        }
+
+        foreach ($bayMoves as $index => $moves) {
+            $discharge = $moves['discharge_moves'] ?? 0;
+            $load = $moves['load_moves'] ?? 0;
+            $restowage = $moves['restowage_moves'] ?? 0;
+            $bayMoves[$index]['total_moves'] = $discharge + $load + $restowage;
+        }
+
+        // ======= PHASE 7: UPDATE SHIPBAY DENGAN DATA BARU =======
+        $movePenalty = $movesChargedForPenalty * $moveCost;
         $shipBay->bay_moves = json_encode($bayMoves);
-
+        // $shipBay->restowage_containers = json_encode($newRestowageData['containers']);
+        // $shipBay->restowage_moves = $newRestowageData['moves'];
+        // $shipBay->restowage_penalty = $newRestowageData['penalty'];
         $shipBay->penalty += $movePenalty;
-        $shipBay->total_revenue = $shipBay->revenue - $shipBay->penalty - $shipBay->extra_moves_penalty;
-
+        $shipBay->total_revenue = $shipBay->revenue - $shipBay->penalty;
         $shipBay->save();
+
+        $restowageImprovement = $previousRestowageData['moves'] > $newRestowageData['moves'];
+        $restowageChangeAmount = $previousRestowageData['moves'] - $newRestowageData['moves'];
+
+        $this->updateWeeklyPerformanceFromShipBay($shipBay);
 
         return response()->json([
             'message' => 'Moves incremented successfully',
@@ -514,8 +611,92 @@ class ShipBayController extends Controller
             'moves_charged' => $movesChargedForPenalty,
             'actual_moves' => $validatedData['count'],
             'penalty' => $movePenalty,
-            'shipBay' => $shipBay
+            'shipBay' => $shipBay,
+            'restowage_fixed' => $fixedBlockingContainer,
+            'restowage_improved' => $restowageImprovement,
+            'restowage_improvement_amount' => $restowageChangeAmount > 0 ? $restowageChangeAmount : 0,
+            'was_blocking_container' => $wasBlockingContainer,
+            'previous_restowage_bays' => array_keys($previousRestowageBays),
+            'current_restowage_bays' => array_keys($currentRestowageBays),
+            'moved_containers' => $movedContainers
         ]);
+    }
+
+    private function updateWeeklyPerformanceFromShipBay($shipBay)
+    {
+        // Get current week
+        $currentWeek = $shipBay->current_round;
+
+        // Get WeeklyPerformance record
+        $weeklyPerformance = WeeklyPerformance::firstOrCreate(
+            [
+                'room_id' => $shipBay->room_id,
+                'user_id' => $shipBay->user_id,
+                'week' => $currentWeek
+            ]
+        );
+
+        // Get Room for cost rates
+        $room = Room::find($shipBay->room_id);
+        $moveCost = $room->move_cost;
+
+        // Update move stats
+        $weeklyPerformance->discharge_moves = $shipBay->discharge_moves;
+        $weeklyPerformance->load_moves = $shipBay->load_moves;
+        $weeklyPerformance->move_costs = ($shipBay->discharge_moves + $shipBay->load_moves) * $moveCost;
+
+        // Update restowage data - FIX FOR THE ERROR
+        // Check if restowage_containers is a JSON string and parse it
+        $restowageContainers = null;
+        if (is_string($shipBay->restowage_containers)) {
+            $restowageContainers = json_decode($shipBay->restowage_containers, true);
+        } elseif (is_array($shipBay->restowage_containers)) {
+            $restowageContainers = $shipBay->restowage_containers;
+        }
+
+        // Count the containers (or default to 0 if null)
+        $containerCount = 0;
+        if (is_array($restowageContainers)) {
+            $containerCount = count($restowageContainers);
+        }
+
+        // Store only the count in the integer field
+        $weeklyPerformance->restowage_container_count = $containerCount;
+        $weeklyPerformance->restowage_moves = $shipBay->restowage_moves;
+        $weeklyPerformance->restowage_penalty = $shipBay->restowage_penalty;
+
+        // Update financial stats
+        $weeklyPerformance->revenue = $shipBay->revenue;
+        $weeklyPerformance->total_penalty = $shipBay->penalty;
+        $weeklyPerformance->dock_warehouse_penalty = $shipBay->dock_warehouse_penalty;
+        $weeklyPerformance->unrolled_penalty = $shipBay->unrolled_penalty;
+        $weeklyPerformance->net_result = $shipBay->total_revenue;
+
+        // Update container counts (requires calculating from arena data)
+        $arenaData = json_decode($shipBay->arena, true);
+        $containerIds = $this->extractContainerIdsFromArena($arenaData);
+        $containers = Container::whereIn('id', $containerIds)->get();
+
+        $weeklyPerformance->dry_containers_loaded = $containers->where('type', 'dry')->count();
+        $weeklyPerformance->reefer_containers_loaded = $containers->where('type', 'reefer')->count();
+
+        // Save the changes
+        $weeklyPerformance->save();
+    }
+
+    private function extractContainerIdsFromArena($arena)
+    {
+        $containerIds = [];
+
+        if (isset($arena['containers']) && is_array($arena['containers'])) {
+            foreach ($arena['containers'] as $container) {
+                if (isset($container['id'])) {
+                    $containerIds[] = $container['id'];
+                }
+            }
+        }
+
+        return $containerIds;
     }
 
     public function incrementCards(Request $request, $roomId, $userId)

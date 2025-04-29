@@ -130,6 +130,8 @@ Route::get('rooms/{room}/rankings', [RoomController::class, 'getUsersRanking'])-
 Route::put('rooms/{room}/swap-config', [RoomController::class, 'updateSwapConfig'])->middleware('auth:sanctum');
 Route::get('rooms/{roomId}/port-sequence/{port}', [RoomController::class, 'getProperStackingOrder']);
 Route::get('rooms/{roomId}/restowage-status', [RoomController::class, 'getRestowageStatus'])->middleware('auth:sanctum');
+Route::get('rooms/{roomId}/details', [RoomController::class, 'getRoomDetails'])->middleware('auth:sanctum');
+Route::get('rooms/{roomId}/users/{userId}/bay-capacity', [RoomController::class, 'getBayCapacityStatus'])->middleware('auth:sanctum');
 
 // Route::post('rooms/{room}/create-card-temporary/{user}', [RoomController::class, 'createCardTemporary'])->middleware('auth:sanctum', 'admin');
 Route::get('card-temporary/{roomId}/{userId}', [CardTemporaryController::class, 'getCardTemporaries']);
@@ -137,6 +139,7 @@ Route::get('card-temporary/unfulfilled/{roomId}/{userId}', [CardTemporaryControl
 Route::post('card-temporary/accept', [CardTemporaryController::class, 'acceptCardTemporary']);
 Route::post('card-temporary/reject', [CardTemporaryController::class, 'rejectCardTemporary']);
 Route::post('card-temporary/batch', [CardTemporaryController::class, 'batchCreate']);
+Route::post('card-temporary/batch-multi-user', [CardTemporaryController::class, 'batchCreateMultiUser']);
 
 // ShipBay Routes
 Route::get('ship-bays', [ShipBayController::class, 'index']);
@@ -151,7 +154,6 @@ Route::put('ship-bays/{room}/{user}/section', [ShipBayController::class, 'update
 Route::post('ship-bays/{room}/{user}/moves', [ShipBayController::class, 'incrementMoves'])->middleware('auth:sanctum');
 Route::post('ship-bays/{room}/{user}/cards', [ShipBayController::class, 'incrementCards'])->middleware('auth:sanctum');
 Route::get('ship-bays/{room}/{user}/statistics', [ShipBayController::class, 'getBayStatistics']);
-Route::get('ship-bays/financial-summary/{roomId}/{userId}', [ShipBayController::class, 'getFinancialSummary']);
 
 Route::get('rooms/{roomId}/users/{userId}/bay-statistics-history/{week?}', [ShipBayController::class, 'getBayStatisticsHistory'])->middleware('auth:sanctum');
 
@@ -184,8 +186,10 @@ Route::delete('simulation-logs/{simulationLog}', [SimulationLogController::class
 Route::get('simulation-logs/{roomId}/{userId}', [SimulationLogController::class, 'getByRoomAndUser']);
 
 // Weekly Performance Routes
-Route::get('/rooms/{roomId}/users/{userId}/weekly-performance/{week?}', [WeeklyPerformanceController::class, 'getWeeklyPerformance']);
-Route::post('/rooms/{roomId}/users/{userId}/weekly-performance/{week}', [WeeklyPerformanceController::class, 'updateWeeklyPerformance']);
+Route::get('/rooms/{roomId}/weekly-performance/{userId}/{week}', [WeeklyPerformanceController::class, 'getWeeklyPerformance']);
+Route::post('/rooms/{roomId}/weekly-performance/{userId}/{week}', [WeeklyPerformanceController::class, 'updateWeeklyPerformance']);
+
+Route::get('ship-bays/financial-summary/{roomId}/{userId}', [WeeklyPerformanceController::class, 'getFinancialSummary']);
 
 // Capacity Uptake Routes
 Route::get('/capacity-uptakes/{roomId}/{userId}/{week?}', [CapacityUptakeController::class, 'getCapacityUptake']);

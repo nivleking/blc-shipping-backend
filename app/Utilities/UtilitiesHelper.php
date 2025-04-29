@@ -8,13 +8,13 @@ trait UtilitiesHelper
     {
         return [
             // Committed dry containers
-            'dry_committed' => 16000000,
+            'dry_committed' => 5_000_000,
             // Non-committed dry containers
-            'dry_non_committed' => 8000000,
+            'dry_non_committed' => 2_000_000,
             // Committed reefer containers
-            'reefer_committed' => 24000000,
+            'reefer_committed' => 6_000_000,
             // Non-committed reefer containers
-            'reefer_non_committed' => 16000000
+            'reefer_non_committed' => 8_000_000
         ];
     }
 

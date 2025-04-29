@@ -249,4 +249,94 @@ class CardTemporaryController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Create multiple card temporaries for multiple users in a single batch
+     */
+    public function batchCreateMultiUser(Request $request)
+    {
+        $validated = $request->validate([
+            'room_id' => 'required|exists:rooms,id',
+            'batches' => 'required|array',
+            'batches.*.user_id' => 'required|exists:users,id',
+            'batches.*.round' => 'required|integer',
+            'batches.*.cards' => 'required|array',
+            'batches.*.cards.*.deck_id' => 'required|exists:decks,id',
+            'batches.*.cards.*.card_id' => 'required|exists:cards,id',
+            'batches.*.cards.*.status' => 'sometimes|string|in:selected,accepted,rejected',
+        ]);
+
+        // Begin transaction for better performance and data integrity
+        DB::beginTransaction();
+
+        try {
+            $roomId = $validated['room_id'];
+            $room = Room::findOrFail($roomId);
+            $cardsLimitPerRound = $room->cards_limit_per_round;
+            $roomPrefix = "R{$room->id}-";
+
+            $results = [];
+
+            // Process each user's batch
+            foreach ($validated['batches'] as $batch) {
+                $userId = $batch['user_id'];
+                $round = $batch['round'];
+
+                // Delete existing card temporaries for this user
+                CardTemporary::where([
+                    'user_id' => $userId,
+                    'room_id' => $roomId,
+                ])->delete();
+
+                // Sort and process cards for this user
+                $sortedCards = collect($batch['cards'])
+                    ->filter(function ($card) use ($roomPrefix) {
+                        return !str_starts_with($card['card_id'], $roomPrefix);
+                    })
+                    ->sortBy(function ($card) {
+                        return (int)$card['card_id'];
+                    })
+                    ->values()
+                    ->all();
+
+                $userCardTemporaries = [];
+
+                // Process each card
+                foreach ($sortedCards as $index => $card) {
+                    $status = $card['status'] ?? 'selected';
+                    $cardRound = $index < $cardsLimitPerRound ? $round : null;
+
+                    $cardTemp = CardTemporary::create([
+                        'user_id' => $userId,
+                        'room_id' => $roomId,
+                        'card_id' => $card['card_id'],
+                        'deck_id' => $card['deck_id'],
+                        'status' => $status,
+                        'round' => $cardRound
+                    ]);
+
+                    $userCardTemporaries[] = $cardTemp;
+                }
+
+                $results[$userId] = [
+                    'count' => count($userCardTemporaries),
+                    'port' => $batch['port'] ?? null
+                ];
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Card temporaries created successfully for all users',
+                'results' => $results
+            ], 201);
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'message' => 'Failed to create card temporaries',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 }

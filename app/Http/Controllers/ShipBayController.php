@@ -8,13 +8,148 @@ use App\Models\CardTemporary;
 use App\Models\Container;
 use App\Models\Room;
 use App\Models\ShipBay;
+use App\Models\ShipDock;
 use App\Models\WeeklyPerformance;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class ShipBayController extends Controller
 {
+    /**
+     * Get consolidated arena data in a single API call
+     */
+    public function getConsolidatedArenaData($roomId, $userId)
+    {
+        try {
+            // 1. Get room data
+            $room = Room::find($roomId);
+            if (!$room) {
+                return response()->json(['error' => 'Room not found'], 404);
+            }
 
+            // Get swap configuration
+            $swapConfig = $room->swap_config ?
+                (is_string($room->swap_config) ? json_decode($room->swap_config, true) : $room->swap_config)
+                : [];
+
+            // 2. Get ship bay data
+            $shipBay = ShipBay::where('room_id', $roomId)
+                ->where('user_id', $userId)
+                ->first();
+
+            if (!$shipBay) {
+                return response()->json(['error' => 'Ship bay not found'], 404);
+            }
+
+            // 3. Get config (bay configuration)
+            $baySize = json_decode($room->bay_size, true);
+            $bayCount = $room->bay_count;
+            $bayTypes = json_decode($room->bay_types, true);
+
+            // 4. Get all containers
+            $containers = Container::with('card')->get();
+
+            // 5. Get ship dock data
+            $shipDock = ShipDock::where('user_id', $userId)
+                ->where('room_id', $roomId)
+                ->first();
+
+            // 6. Get restowage status
+            $roomController = new RoomController();
+            $restowageResponse = $roomController->calculateRestowagePenalties($room, $userId);
+
+            // 7. Get bay capacity status
+            $bayCapacityResponse = $roomController->getBayCapacityStatus($roomId, $userId);
+            $isBayFull = $bayCapacityResponse->original['is_full'] ?? false;
+
+            // 8. Get unfulfilled containers
+            $cardTemporaries = CardTemporary::where([
+                'room_id' => $roomId,
+                'user_id' => $userId,
+                'status' => 'accepted',
+            ])
+                ->whereNotNull('unfulfilled_containers')
+                ->where('unfulfilled_containers', '!=', '[]')
+                ->get();
+
+            $unfulfilledContainers = [];
+            foreach ($cardTemporaries as $card) {
+                $unfulfilledContainers[$card->card_id] = $card->unfulfilled_containers;
+            }
+
+            // Prepare consolidated response
+            $response = [
+                // Room data
+                'room' => [
+                    'deck_id' => $room->deck_id,
+                    'move_cost' => $room->move_cost,
+                    'dock_warehouse_cost' => $room->dock_warehouse_costs['default'] ?? 7000000,
+                    'restowage_cost' => $room->restowage_cost,
+                    'cards_must_process_per_round' => $room->cards_must_process_per_round,
+                    'cards_limit_per_round' => $room->cards_limit_per_round,
+                    'total_rounds' => $room->total_rounds,
+                    'swap_config' => $swapConfig,
+                ],
+
+                // Ship bay data
+                'ship_bay' => [
+                    'current_round' => $shipBay->current_round,
+                    'processed_cards' => $shipBay->processed_cards,
+                    'arena' => $shipBay->arena,
+                    'revenue' => $shipBay->revenue,
+                    'port' => $shipBay->port,
+                    'section' => $shipBay->section,
+                    'load_moves' => $shipBay->load_moves,
+                    'discharge_moves' => $shipBay->discharge_moves,
+                    'accepted_cards' => $shipBay->accepted_cards,
+                    'rejected_cards' => $shipBay->rejected_cards,
+                    'penalty' => $shipBay->penalty,
+                ],
+
+                // Config data
+                'config' => [
+                    'baySize' => $baySize,
+                    'bayCount' => $bayCount,
+                    'bayTypes' => $bayTypes,
+                ],
+
+                // Container data
+                'containers' => $containers,
+
+                // Ship dock data
+                'ship_dock' => $shipDock ? [
+                    'arena' => $shipDock->arena,
+                ] : null,
+
+                // Restowage data
+                'restowage' => [
+                    'restowage_containers' => $restowageResponse['containers'] ?? [],
+                    'restowage_moves' => $restowageResponse['moves'] ?? 0,
+                    'restowage_penalty' => $restowageResponse['penalty'] ?? 0,
+                ],
+
+                // Bay capacity data
+                'bay_capacity' => [
+                    'is_full' => $isBayFull,
+                ],
+
+                // Unfulfilled containers data
+                'unfulfilled_containers' => $unfulfilledContainers,
+
+                'bay_statistics' => [
+                    'bay_moves' => json_decode($shipBay->bay_moves, true) ?? [],
+                    'dock_warehouse_penalty' => $shipBay->dock_warehouse_containers,
+                ],
+            ];
+
+            return response()->json($response, 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => 'Failed to fetch arena data',
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
 
     public function index()
     {

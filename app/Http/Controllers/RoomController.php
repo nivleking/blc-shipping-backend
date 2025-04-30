@@ -866,8 +866,8 @@ class RoomController extends Controller
             // Reset statistics for the new week
             $bay->discharge_moves = 0;
             $bay->load_moves = 0;
-            $bay->bay_moves = json_encode([]);
             $bay->restowage_moves = 0;
+            $bay->bay_moves = json_encode([]);
             $bay->restowage_containers = null;
 
             $bay->dock_warehouse_penalty = 0;

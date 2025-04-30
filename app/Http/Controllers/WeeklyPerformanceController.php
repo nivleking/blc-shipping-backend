@@ -65,16 +65,16 @@ class WeeklyPerformanceController extends Controller
 
         // Get revenue from capacity uptake accepted cards
         $revenue = 0;
-        if ($capacityUptake && is_array($capacityUptake->accepted_cards)) {
-            foreach ($capacityUptake->accepted_cards as $card) {
-                if (isset($card['revenue'])) {
-                    $revenue += (int)$card['revenue'];
-                }
-            }
-        } else {
-            // Fallback to ShipBay revenue if capacity uptake data isn't available
-            $revenue = $shipBay->revenue ?? 0;
-        }
+        // if ($capacityUptake && is_array($capacityUptake->accepted_cards)) {
+        //     foreach ($capacityUptake->accepted_cards as $card) {
+        //         if (isset($card['revenue'])) {
+        //             $revenue += (int)$card['revenue'];
+        //         }
+        //     }
+        // } else {
+        //     // Fallback to ShipBay revenue if capacity uptake data isn't available
+        // }
+        $revenue = $shipBay->total_revenue ?? 0;
 
         $finalRevenue = $revenue - $totalPenalty;
 

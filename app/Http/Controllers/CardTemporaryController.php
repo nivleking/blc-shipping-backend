@@ -86,11 +86,26 @@ class CardTemporaryController extends Controller
 
     public function getCardTemporaries($roomId, $userId)
     {
+        // Get ShipBay data for current round and port
         $shipBay = ShipBay::where('room_id', $roomId)
             ->where('user_id', $userId)
             ->first();
 
+        if (!$shipBay) {
+            return response()->json([
+                "error" => "Ship bay not found for this user and room"
+            ], 404);
+        }
+
         $currentRound = $shipBay->current_round;
+
+        // Get Room data for configuration settings
+        $room = Room::find($roomId);
+        if (!$room) {
+            return response()->json([
+                "error" => "Room not found"
+            ], 404);
+        }
 
         // Use a direct join instead of relationship loading
         $cardTemporaries = CardTemporary::select(
@@ -117,24 +132,20 @@ class CardTemporaryController extends Controller
             })
             ->orderByRaw('card_temporaries.is_backlog DESC')
             ->orderByRaw("CASE WHEN cards.priority = 'Committed' THEN 1 ELSE 2 END")
-            // ->orderByRaw("CAST(card_temporaries.card_id AS UNSIGNED) ASC")
             ->get();
 
         // Format the result to match what the frontend expects
         $formattedResult = $cardTemporaries->map(function ($temp) {
-            // Create a card property with the joined data
             $temp->card = [
                 'id' => $temp->card_id,
-                'deck_id' => $temp->deck_id,
                 'type' => $temp->type,
                 'priority' => $temp->priority,
                 'origin' => $temp->origin,
                 'destination' => $temp->destination,
                 'quantity' => $temp->quantity,
-                'revenue' => $temp->revenue
+                'revenue' => $temp->revenue,
             ];
 
-            // Remove duplicated attributes
             unset($temp->type);
             unset($temp->priority);
             unset($temp->origin);
@@ -145,16 +156,32 @@ class CardTemporaryController extends Controller
             return $temp;
         });
 
-        $room = Room::find($roomId);
-
-        // Get first card limit cards from formattedResult
+        // Apply card limit (keeping existing logic)
         $cardsLimit = $room->cards_limit_per_round;
         if ($formattedResult->count() > $cardsLimit) {
             $formattedResult = $formattedResult->take($cardsLimit);
         }
 
+        // Check if card limit is exceeded
+        $isLimitExceeded = $shipBay->processed_cards >= $room->cards_must_process_per_round ||
+            $shipBay->current_round_cards >= $room->cards_limit_per_round;
+
+        $containers = Container::whereIn('card_id', $formattedResult->pluck('card_id'))
+            ->whereIn('deck_id', $formattedResult->pluck('deck_id'))
+            ->get();
+
+        // Return enhanced response with all required data
         return response()->json([
             "cards" => $formattedResult,
+            "deck_id" => $room->deck_id,
+            "move_cost" => $room->move_cost,
+            "cards_must_process_per_round" => $room->cards_must_process_per_round,
+            "cards_limit_per_round" => $cardsLimit,
+            "port" => $shipBay->port,
+            "is_limit_exceeded" => $isLimitExceeded,
+            "current_round" => $currentRound,
+            "total_rounds" => $room->total_rounds,
+            "containers" => $containers,
         ]);
     }
 

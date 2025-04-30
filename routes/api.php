@@ -28,6 +28,8 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
+Route::get('/arena-data/{roomId}/{userId}', [ShipBayController::class, 'getConsolidatedArenaData'])->middleware('auth:sanctum');
+
 Route::get('/', function () {
     return response()->json(['message' => 'Hello World!']);
 });

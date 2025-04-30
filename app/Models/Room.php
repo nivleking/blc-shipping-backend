@@ -28,11 +28,12 @@ class Room extends Model
         'bay_types',
         'total_rounds',
         'move_cost',
-        'extra_moves_cost',
-        'ideal_crane_split',
+        'dock_warehouse_costs',
         'cards_limit_per_round',
         'cards_must_process_per_round',
         'swap_config'
+        // 'extra_moves_cost',
+        // 'ideal_crane_split',
     ];
 
     protected $casts = [
@@ -40,7 +41,8 @@ class Room extends Model
         'bay_types' => 'array',
         'users' => 'array',
         'assigned_users' => 'array',
-        'swap_config'
+        'swap_config',
+        'dock_warehouse_costs' => 'array',
     ];
 
     public function users()

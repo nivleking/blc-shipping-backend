@@ -48,7 +48,7 @@ class ShipLayoutController extends Controller
             'name' => 'required|string',
             'description' => 'nullable|string',
             'bay_size' => 'required|array',
-            'bay_count' => 'required|integer|min:1|max:8',
+            'bay_count' => 'required|integer|min:1|max:10',
             'bay_types' => 'nullable|array'
         ]);
 

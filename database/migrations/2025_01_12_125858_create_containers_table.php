@@ -10,11 +10,16 @@ return new class extends Migration
     {
         Schema::create('containers', function (Blueprint $table) {
             $table->id();
-            $table->string('color');
-            $table->string('type')->default('dry');
             $table->string('card_id');
-            $table->foreign('card_id')->references('id')->on('cards')->onDelete('cascade');
+            $table->foreignId('deck_id');
+            $table->string('color');
+            $table->string('type');
+            $table->string('last_processed_by')->nullable();
+            $table->timestamp('last_processed_at')->nullable();
+            $table->boolean('is_restowed')->default(false);
             $table->timestamps();
+
+            $table->foreign(['card_id', 'deck_id'])->references(['id', 'deck_id'])->on('cards')->onDelete('cascade');
         });
     }
 

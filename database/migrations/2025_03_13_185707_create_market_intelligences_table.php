@@ -13,6 +13,7 @@ return new class extends Migration
             $table->foreignId('deck_id')->constrained()->onDelete('cascade');
             $table->string('name');
             $table->json('price_data');
+            $table->json('penalties')->nullable();
             $table->timestamps();
         });
     }

@@ -20,6 +20,8 @@ return new class extends Migration
             $table->string('port');
             $table->json('accepted_cards')->nullable();
             $table->json('rejected_cards')->nullable();
+            $table->json('arena_start')->nullable();
+            $table->json('arena_end')->nullable();
             $table->integer('dry_containers_accepted')->default(0);
             $table->integer('reefer_containers_accepted')->default(0);
             $table->integer('committed_containers_accepted')->default(0);

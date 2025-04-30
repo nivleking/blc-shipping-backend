@@ -13,16 +13,23 @@ class Deck extends Model
 
     public function cards()
     {
-        return $this->belongsToMany(Card::class, 'card_deck', 'deck_id', 'card_id');
+        return $this->hasMany(Card::class)
+            ->where('is_initial', false)
+            ->orderByRaw('LEFT(id, 1) ASC');
     }
 
-    public function marketIntelligences()
+    public function allCards()
     {
-        return $this->hasMany(MarketIntelligence::class);
+        return $this->hasMany(Card::class);
     }
 
-    public function activeMarketIntelligence()
+    public function initialCards()
     {
-        return $this->marketIntelligences()->latest()->first();
+        return $this->hasMany(Card::class)->where('is_initial', true);
+    }
+
+    public function marketIntelligence()
+    {
+        return $this->hasOne(MarketIntelligence::class);
     }
 }

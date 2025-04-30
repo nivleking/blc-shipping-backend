@@ -14,6 +14,8 @@ class CapacityUptake extends Model
         'room_id',
         'week',
         'port',
+        'arena_start',
+        'arena_end',
         'accepted_cards',
         'rejected_cards',
         'dry_containers_accepted',
@@ -27,6 +29,8 @@ class CapacityUptake extends Model
     ];
 
     protected $casts = [
+        'arena_start' => 'array',
+        'arena_end' => 'array',
         'accepted_cards' => 'array',
         'rejected_cards' => 'array',
         'dry_containers_accepted' => 'integer',

@@ -19,10 +19,16 @@ return new class extends Migration
             $table->string('port');
             $table->json('arena');
             $table->string('section')->default('section1');
+            $table->bigInteger('total_revenue')->default(0);
             $table->bigInteger('revenue')->default(0);
             $table->bigInteger('penalty')->default(0);
-            $table->bigInteger('extra_moves_penalty')->default(0);
-            $table->bigInteger('total_revenue')->default(0);
+            $table->bigInteger('dock_warehouse_penalty')->default(0);
+            $table->bigInteger('restowage_penalty')->default(0);
+            $table->bigInteger('unrolled_penalty')->default(0);
+            $table->json('unrolled_cards')->nullable();
+            $table->json('restowage_containers')->nullable();
+            $table->json('dock_warehouse_containers')->nullable();
+            $table->integer('restowage_moves')->default(0);
             $table->unsignedBigInteger('discharge_moves')->default(0);
             $table->unsignedBigInteger('load_moves')->default(0);
             $table->unsignedBigInteger('processed_cards')->default(0);
@@ -30,11 +36,12 @@ return new class extends Migration
             $table->unsignedBigInteger('rejected_cards')->default(0);
             $table->integer('current_round')->default(1);
             $table->integer('current_round_cards')->default(0);
-            $table->json('bay_pairs')->nullable();
             $table->json('bay_moves')->nullable();
-            $table->integer('long_crane_moves')->default(0);
-            $table->integer('extra_moves_on_long_crane')->default(0);
             $table->timestamps();
+            // $table->bigInteger('extra_moves_penalty')->default(0);
+            // $table->json('bay_pairs')->nullable();
+            // $table->integer('long_crane_moves')->default(0);
+            // $table->integer('extra_moves_on_long_crane')->default(0);
         });
     }
 

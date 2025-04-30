@@ -13,10 +13,12 @@ class MarketIntelligence extends Model
         'deck_id',
         'name',
         'price_data',
+        'penalties',
     ];
 
     protected $casts = [
         'price_data' => 'array',
+        'penalties' => 'array',
     ];
 
     public function deck()

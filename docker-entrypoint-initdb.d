@@ -1,0 +1,3 @@
+CREATE DATABASE IF NOT EXISTS blc_shipping;
+GRANT ALL PRIVILEGES ON blc_shipping.* TO 'root'@'%';
+FLUSH PRIVILEGES;

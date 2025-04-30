@@ -13,22 +13,36 @@ class CardTemporary extends Model
         'user_id',
         'room_id',
         'card_id',
+        'deck_id',
         'status',
+        'round',
+        'is_backlog',
+        'original_round',
+        'unfulfilled_containers',
+        'revenue_granted',
+        'fulfillment_round',
     ];
 
-    // Add this relationship
+    protected $casts = [
+        'is_backlog' => 'boolean',
+        'round' => 'integer',
+        'original_round' => 'integer',
+        'unfulfilled_containers' => 'array',
+        'revenue_granted' => 'boolean',
+        'fulfillment_round' => 'integer',
+    ];
+
     public function card()
     {
-        return $this->belongsTo(Card::class);
+        return $this->belongsTo(Card::class, 'card_id', 'id')
+            ->where('deck_id', $this->deck_id);
     }
 
-    // Add user relationship if needed
     public function user()
     {
         return $this->belongsTo(User::class);
     }
 
-    // Add room relationship if needed
     public function room()
     {
         return $this->belongsTo(Room::class);

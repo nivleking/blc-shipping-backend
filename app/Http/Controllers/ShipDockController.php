@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Container;
 use App\Models\ShipDock;
 use Illuminate\Http\Request;
 
@@ -105,11 +106,35 @@ class ShipDockController extends Controller
             return response()->json(['message' => 'Ship dock not found'], 404);
         }
 
-        // Parse the arena JSON
-        $arenaData = json_decode($shipDock->arena, true);
+        // When using model's array casting, we need to handle arena data properly
+        // The arena is already an array due to the cast in the model
+        $arenaData = $shipDock->arena;
 
-        // Add pagination metadata for frontend
+        // Ensure we have the containers array
+        if (isset($arenaData['containers']) && !empty($arenaData['containers'])) {
+            // Get all container IDs from the arena
+            $containerIds = array_column($arenaData['containers'], 'id');
+
+            // Fetch container metadata from the database
+            $containerModels = Container::whereIn('id', $containerIds)->get()->keyBy('id');
+
+            // Enrich arena data with metadata from Container models
+            foreach ($arenaData['containers'] as &$container) {
+                if (isset($containerModels[$container['id']])) {
+                    $dbContainer = $containerModels[$container['id']];
+                    // Add the is_restowed flag from the database
+                    $container['is_restowed'] = $dbContainer->is_restowed;
+                }
+            }
+        }
+
+        // Build response with the arena data directly (not as a string)
         $response = $shipDock->toArray();
+
+        // Override arena with our enriched version
+        $response['arena'] = $arenaData;
+
+        // Calculate total containers count
         $response['total_containers'] = isset($arenaData['totalContainers'])
             ? $arenaData['totalContainers']
             : count($arenaData['containers'] ?? []);

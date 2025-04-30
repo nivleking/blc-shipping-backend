@@ -4,12 +4,15 @@ namespace App\Http\Controllers;
 
 use App\Models\Card;
 use App\Models\Deck;
+use App\Utilities\UtilitiesHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class CardController extends Controller
 {
+    use UtilitiesHelper;
+
     public function index()
     {
         return Card::with('decks')->get();
@@ -19,6 +22,7 @@ class CardController extends Controller
     {
         $validated = $request->validate([
             'id' => 'required|string',
+            'deck_id' => 'required|exists:decks,id',
             'priority' => 'required|string',
             'origin' => 'required|string',
             'destination' => 'required|string',
@@ -28,27 +32,23 @@ class CardController extends Controller
         ]);
 
         $numericId = intval($validated['id']);
-        if ($numericId < 1 || $numericId > 99999) {
+        if ($numericId < 1) {
             return response()->json([
-                'message' => 'ID must be a number between 1 and 99999',
+                'message' => 'Invalid ID',
                 'errors' => ['id' => ['Invalid ID range']]
             ], 422);
         }
 
-        if (Card::where('id', $validated['id'])->exists()) {
-            if (isset($validated['mode']) && $validated['mode'] == "auto_generate") {
-                $validated['id'] = $this->getNextAvailableId();
-                $numericId = intval($validated['id']);
-            } else {
-                return response()->json([
-                    'message' => 'Card with this ID already exists',
-                ], 422);
-            }
+        if (Card::where('id', $validated['id'])
+            ->where('deck_id', $validated['deck_id'])
+            ->exists()
+        ) {
+            return response()->json([
+                'message' => 'Card with this ID already exists in this deck',
+            ], 422);
         }
 
-        // Ensure type is consistently formatted
         $validated['type'] = ($numericId % 5 === 0) ? 'reefer' : 'dry';
-
         $card = Card::create($validated);
 
         for ($i = 0; $i < $card->quantity; $i++) {
@@ -56,6 +56,7 @@ class CardController extends Controller
             $card->containers()->create([
                 'color' => $color,
                 'type' => $validated['type'],
+                'deck_id' => $validated['deck_id'],
             ]);
         }
 
@@ -67,76 +68,136 @@ class CardController extends Controller
         return $card;
     }
 
-    private function getNextAvailableId()
-    {
-        $id = 1;
-        while (Card::where('id', (string)$id)->exists()) {
-            $id++;
-        }
-        return (string)$id;
-    }
-
     public function update(Request $request, Card $card)
     {
         $validated = $request->validate([
-            'type' => 'string',
-            'priority' => 'string',
+            'deck_id' => 'required|exists:decks,id',
+            'type' => 'string|in:dry,reefer',
+            'priority' => 'string|in:Committed,Non-Committed',
             'origin' => 'string',
             'destination' => 'string',
-            'quantity' => 'integer',
-            'revenue' => 'integer',
+            'quantity' => 'integer|min:1',
+            'revenue' => 'integer|min:0',
         ]);
 
-        // Store the old values for comparison
-        $oldType = $card->type;
-        $oldDestination = $card->destination;
-        $oldQuantity = $card->quantity;
+        DB::beginTransaction();
+        try {
+            // First, explicitly find the card with both keys to ensure we have the right one
+            $specificCard = DB::table('cards')
+                ->where('id', $card->id)
+                ->where('deck_id', $validated['deck_id'])
+                ->first();
 
-        // Update the card
-        $card->update($validated);
-
-        // If destination has changed, update all container colors
-        if (isset($validated['destination']) && $oldDestination !== $validated['destination']) {
-            // Get the new color based on the destination
-            $newColor = $this->generateContainerColor($validated['destination']);
-
-            // Update all containers associated with this card
-            $card->containers()->update(['color' => $newColor]);
-        }
-
-        // If type has changed, update all containers
-        if (isset($validated['type']) && $oldType !== $validated['type']) {
-            $card->containers()->update(['type' => $validated['type']]);
-        }
-
-        // Handle quantity changes (add or remove containers as needed)
-        if (isset($validated['quantity']) && $oldQuantity !== $validated['quantity']) {
-            if ($validated['quantity'] > $oldQuantity) {
-                // Add new containers
-                $containersToAdd = $validated['quantity'] - $oldQuantity;
-                $containerType = $card->type;
-                $containerColor = $this->generateContainerColor($card->destination);
-
-                for ($i = 0; $i < $containersToAdd; $i++) {
-                    $card->containers()->create([
-                        'type' => $containerType,
-                        'color' => $containerColor
-                    ]);
-                }
-            } else if ($validated['quantity'] < $oldQuantity) {
-                // Remove excess containers
-                $containersToRemove = $oldQuantity - $validated['quantity'];
-                $card->containers()->latest()->take($containersToRemove)->delete();
+            if (!$specificCard) {
+                return response()->json([
+                    'message' => 'Card not found in this deck'
+                ], 404);
             }
-        }
 
-        // Return the updated card with its containers
-        return response()->json($card->load('containers'), 200);
+            // Store old values before update
+            $oldType = $specificCard->type;
+            $oldDestination = $specificCard->destination;
+            $oldQuantity = $specificCard->quantity;
+            $newQuantity = $validated['quantity'] ?? $oldQuantity;
+            $cardType = $validated['type'] ?? $oldType;
+            $destination = $validated['destination'] ?? $oldDestination;
+
+            // Manually update with both keys in the WHERE clause
+            DB::table('cards')
+                ->where('id', $card->id)
+                ->where('deck_id', $validated['deck_id'])
+                ->update([
+                    'type' => $cardType,
+                    'priority' => $validated['priority'] ?? $specificCard->priority,
+                    'origin' => $validated['origin'] ?? $specificCard->origin,
+                    'destination' => $destination,
+                    'quantity' => $newQuantity,
+                    'revenue' => $validated['revenue'] ?? $specificCard->revenue
+                ]);
+
+            // Update existing containers if destination or type changed
+            if ((isset($validated['destination']) && $oldDestination !== $destination) ||
+                (isset($validated['type']) && $oldType !== $cardType)
+            ) {
+
+                $newColor = $this->generateContainerColor($destination);
+
+                DB::table('containers')
+                    ->where('card_id', $card->id)
+                    ->where('deck_id', $validated['deck_id'])
+                    ->update([
+                        'color' => $newColor,
+                        'type' => $cardType
+                    ]);
+            }
+
+            // Handle quantity changes
+            if ($newQuantity != $oldQuantity) {
+                // Get current container count
+                $currentContainerCount = DB::table('containers')
+                    ->where('card_id', $card->id)
+                    ->where('deck_id', $validated['deck_id'])
+                    ->count();
+
+                if ($newQuantity > $currentContainerCount) {
+                    // Create additional containers if quantity increased
+                    $cardObj = Card::findByKeys($card->id, $validated['deck_id']);
+                    $containersToAdd = $newQuantity - $currentContainerCount;
+
+                    for ($i = 0; $i < $containersToAdd; $i++) {
+                        $color = $this->generateContainerColor($destination);
+                        $cardObj->containers()->create([
+                            'color' => $color,
+                            'type' => $cardType,
+                            'deck_id' => $validated['deck_id'],
+                        ]);
+                    }
+                } elseif ($newQuantity < $currentContainerCount) {
+                    // Delete excess containers if quantity decreased
+                    $containersToRemove = $currentContainerCount - $newQuantity;
+
+                    // Get container IDs to remove
+                    $containerIds = DB::table('containers')
+                        ->where('card_id', $card->id)
+                        ->where('deck_id', $validated['deck_id'])
+                        ->orderBy('id', 'desc')
+                        ->limit($containersToRemove)
+                        ->pluck('id');
+
+                    // Delete the containers
+                    DB::table('containers')
+                        ->whereIn('id', $containerIds)
+                        ->delete();
+                }
+            }
+
+            DB::commit();
+
+            // Return the updated card
+            $updatedCard = Card::findByKeys($card->id, $validated['deck_id']);
+            return response()->json($updatedCard->load('containers'), 200);
+        } catch (\Exception $e) {
+            DB::rollback();
+            return response()->json([
+                'message' => 'Error updating card',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
-    public function destroy(Card $card)
+    public function destroy(Request $request, Card $card)
     {
-        $card->delete();
+        $validated = $request->validate([
+            'deck_id' => 'required|exists:decks,id',
+        ]);
+
+        $card = Card::where('id', $card->id)
+            ->where('deck_id', $validated['deck_id'])
+            ->firstOrFail();
+        $card->containers()->where('deck_id', $validated['deck_id'])->delete();
+        Card::where('id', $card->id)
+            ->where('deck_id', $validated['deck_id'])
+            ->delete();
 
         return response()->json(null, 204);
     }
@@ -160,7 +221,7 @@ class CardController extends Controller
         $ports = $this->getPorts($validated['ports']);
 
         if ($useMarketIntelligence) {
-            $marketIntelligence = $deck->activeMarketIntelligence();
+            $marketIntelligence = $deck->marketIntelligence();
 
             if ($marketIntelligence && !empty($marketIntelligence->price_data)) {
                 $basePriceMap = $marketIntelligence->price_data;
@@ -191,7 +252,10 @@ class CardController extends Controller
         $salesCalls = [];
         $id = 1;
 
-        while (Card::where('id', (string)$id)->exists()) {
+        while (Card::where('id', (string)$id)
+            ->where('deck_id', $deck->id)
+            ->exists()
+        ) {
             $id++;
         }
 
@@ -268,6 +332,7 @@ class CardController extends Controller
         foreach ($salesCalls as $salesCallData) {
             $cardRequest = new Request([
                 'id' => (string)$salesCallData['id'],
+                'deck_id' => $deck->id,
                 'type' => $salesCallData['type'],
                 'priority' => $salesCallData['priority'],
                 'origin' => $salesCallData['origin'],
@@ -278,237 +343,9 @@ class CardController extends Controller
             ]);
 
             $response = $this->store($cardRequest);
-            $responseData = json_decode($response->getContent());
-            $salesCall = Card::find($responseData->id);
-
-            if ($salesCall) {
-                $deck->cards()->attach($salesCall->id);
-            }
         }
 
         return response()->json($deck->load('cards'), 201);
-    }
-
-    private function getPorts($portsCount)
-    {
-        $ports = [
-            2 => ["SBY", "MKS"],
-            3 => ["SBY", "MKS", "MDN"],
-            4 => ["SBY", "MKS", "MDN", "JYP"],
-            5 => ["SBY", "MKS", "MDN", "JYP", "BPN"],
-            6 => ["SBY", "MKS", "MDN", "JYP", "BPN", "BKS"],
-            7 => ["SBY", "MKS", "MDN", "JYP", "BPN", "BKS", "BGR"],
-            8 => ["SBY", "MKS", "MDN", "JYP", "BPN", "BKS", "BGR", "BTH"],
-            9 => ["SBY", "MKS", "MDN", "JYP", "BPN", "BKS", "BGR", "BTH", "AMQ"],
-            10 => ["SBY", "MKS", "MDN", "JYP", "BPN", "BKS", "BGR", "BTH", "AMQ", "SMR"],
-        ];
-
-        return $ports[$portsCount] ?? [];
-    }
-
-    private function getBasePriceMap()
-    {
-        return [
-            // Existing SBY routes
-            "SBY-MKS-Reefer" => 30000000,
-            "SBY-MKS-Dry" => 18000000,
-            "SBY-MDN-Reefer" => 11000000,
-            "SBY-MDN-Dry" => 6000000,
-            "SBY-JYP-Reefer" => 24000000,
-            "SBY-JYP-Dry" => 16200000,
-            "SBY-BPN-Reefer" => 28000000,
-            "SBY-BPN-Dry" => 17000000,
-            "SBY-BKS-Reefer" => 26000000,
-            "SBY-BKS-Dry" => 15000000,
-            "SBY-BGR-Reefer" => 25000000,
-            "SBY-BGR-Dry" => 14000000,
-            "SBY-BTH-Reefer" => 27000000,
-            "SBY-BTH-Dry" => 16000000,
-            "SBY-AMQ-Reefer" => 32000000,
-            "SBY-AMQ-Dry" => 19000000,
-            "SBY-SMR-Reefer" => 29000000,
-            "SBY-SMR-Dry" => 17000000,
-
-            // Existing MDN routes
-            "MDN-SBY-Reefer" => 22000000,
-            "MDN-SBY-Dry" => 13000000,
-            "MDN-MKS-Reefer" => 24000000,
-            "MDN-MKS-Dry" => 14000000,
-            "MDN-JYP-Reefer" => 22000000,
-            "MDN-JYP-Dry" => 14000000,
-            "MDN-BPN-Reefer" => 26000000,
-            "MDN-BPN-Dry" => 15000000,
-            "MDN-BKS-Reefer" => 25000000,
-            "MDN-BKS-Dry" => 14000000,
-            "MDN-BGR-Reefer" => 24000000,
-            "MDN-BGR-Dry" => 13000000,
-            "MDN-BTH-Reefer" => 23000000,
-            "MDN-BTH-Dry" => 12000000,
-            "MDN-AMQ-Reefer" => 30000000,
-            "MDN-AMQ-Dry" => 18000000,
-            "MDN-SMR-Reefer" => 28000000,
-            "MDN-SMR-Dry" => 16000000,
-
-            // Existing MKS routes
-            "MKS-SBY-Reefer" => 18000000,
-            "MKS-SBY-Dry" => 10000000,
-            "MKS-MDN-Reefer" => 20000000,
-            "MKS-MDN-Dry" => 12000000,
-            "MKS-JYP-Reefer" => 24000000,
-            "MKS-JYP-Dry" => 16000000,
-            "MKS-BPN-Reefer" => 25000000,
-            "MKS-BPN-Dry" => 15000000,
-            "MKS-BKS-Reefer" => 23000000,
-            "MKS-BKS-Dry" => 13000000,
-            "MKS-BGR-Reefer" => 22000000,
-            "MKS-BGR-Dry" => 12000000,
-            "MKS-BTH-Reefer" => 26000000,
-            "MKS-BTH-Dry" => 15000000,
-            "MKS-AMQ-Reefer" => 28000000,
-            "MKS-AMQ-Dry" => 17000000,
-            "MKS-SMR-Reefer" => 27000000,
-            "MKS-SMR-Dry" => 16000000,
-
-            // Existing JYP routes
-            "JYP-SBY-Reefer" => 19000000,
-            "JYP-SBY-Dry" => 13000000,
-            "JYP-MKS-Reefer" => 23000000,
-            "JYP-MKS-Dry" => 13000000,
-            "JYP-MDN-Reefer" => 17000000,
-            "JYP-MDN-Dry" => 11000000,
-            "JYP-BPN-Reefer" => 24000000,
-            "JYP-BPN-Dry" => 14000000,
-            "JYP-BKS-Reefer" => 22000000,
-            "JYP-BKS-Dry" => 12000000,
-            "JYP-BGR-Reefer" => 21000000,
-            "JYP-BGR-Dry" => 11000000,
-            "JYP-BTH-Reefer" => 25000000,
-            "JYP-BTH-Dry" => 14000000,
-            "JYP-AMQ-Reefer" => 29000000,
-            "JYP-AMQ-Dry" => 18000000,
-            "JYP-SMR-Reefer" => 26000000,
-            "JYP-SMR-Dry" => 15000000,
-
-            // New BPN routes
-            "BPN-SBY-Reefer" => 20000000,
-            "BPN-SBY-Dry" => 12000000,
-            "BPN-MKS-Reefer" => 22000000,
-            "BPN-MKS-Dry" => 13000000,
-            "BPN-MDN-Reefer" => 24000000,
-            "BPN-MDN-Dry" => 14000000,
-            "BPN-JYP-Reefer" => 21000000,
-            "BPN-JYP-Dry" => 12000000,
-            "BPN-BKS-Reefer" => 23000000,
-            "BPN-BKS-Dry" => 13000000,
-            "BPN-BGR-Reefer" => 22000000,
-            "BPN-BGR-Dry" => 12000000,
-            "BPN-BTH-Reefer" => 25000000,
-            "BPN-BTH-Dry" => 15000000,
-            "BPN-AMQ-Reefer" => 28000000,
-            "BPN-AMQ-Dry" => 17000000,
-            "BPN-SMR-Reefer" => 24000000,
-            "BPN-SMR-Dry" => 14000000,
-
-            // New BKS routes
-            "BKS-SBY-Reefer" => 21000000,
-            "BKS-SBY-Dry" => 12000000,
-            "BKS-MKS-Reefer" => 23000000,
-            "BKS-MKS-Dry" => 13000000,
-            "BKS-MDN-Reefer" => 25000000,
-            "BKS-MDN-Dry" => 15000000,
-            "BKS-JYP-Reefer" => 22000000,
-            "BKS-JYP-Dry" => 12000000,
-            "BKS-BPN-Reefer" => 24000000,
-            "BKS-BPN-Dry" => 14000000,
-            "BKS-BGR-Reefer" => 20000000,
-            "BKS-BGR-Dry" => 11000000,
-            "BKS-BTH-Reefer" => 26000000,
-            "BKS-BTH-Dry" => 16000000,
-            "BKS-AMQ-Reefer" => 29000000,
-            "BKS-AMQ-Dry" => 18000000,
-            "BKS-SMR-Reefer" => 25000000,
-            "BKS-SMR-Dry" => 15000000,
-
-            // New BGR routes
-            "BGR-SBY-Reefer" => 22000000,
-            "BGR-SBY-Dry" => 13000000,
-            "BGR-MKS-Reefer" => 24000000,
-            "BGR-MKS-Dry" => 14000000,
-            "BGR-MDN-Reefer" => 26000000,
-            "BGR-MDN-Dry" => 16000000,
-            "BGR-JYP-Reefer" => 23000000,
-            "BGR-JYP-Dry" => 13000000,
-            "BGR-BPN-Reefer" => 25000000,
-            "BGR-BPN-Dry" => 15000000,
-            "BGR-BKS-Reefer" => 21000000,
-            "BGR-BKS-Dry" => 12000000,
-            "BGR-BTH-Reefer" => 27000000,
-            "BGR-BTH-Dry" => 17000000,
-            "BGR-AMQ-Reefer" => 30000000,
-            "BGR-AMQ-Dry" => 19000000,
-            "BGR-SMR-Reefer" => 26000000,
-            "BGR-SMR-Dry" => 16000000,
-
-            // New BTH routes
-            "BTH-SBY-Reefer" => 23000000,
-            "BTH-SBY-Dry" => 14000000,
-            "BTH-MKS-Reefer" => 25000000,
-            "BTH-MKS-Dry" => 15000000,
-            "BTH-MDN-Reefer" => 27000000,
-            "BTH-MDN-Dry" => 17000000,
-            "BTH-JYP-Reefer" => 24000000,
-            "BTH-JYP-Dry" => 14000000,
-            "BTH-BPN-Reefer" => 26000000,
-            "BTH-BPN-Dry" => 16000000,
-            "BTH-BKS-Reefer" => 22000000,
-            "BTH-BKS-Dry" => 13000000,
-            "BTH-BGR-Reefer" => 23000000,
-            "BTH-BGR-Dry" => 14000000,
-            "BTH-AMQ-Reefer" => 31000000,
-            "BTH-AMQ-Dry" => 20000000,
-            "BTH-SMR-Reefer" => 27000000,
-            "BTH-SMR-Dry" => 17000000,
-
-            // New AMQ routes
-            "AMQ-SBY-Reefer" => 24000000,
-            "AMQ-SBY-Dry" => 15000000,
-            "AMQ-MKS-Reefer" => 26000000,
-            "AMQ-MKS-Dry" => 16000000,
-            "AMQ-MDN-Reefer" => 28000000,
-            "AMQ-MDN-Dry" => 18000000,
-            "AMQ-JYP-Reefer" => 25000000,
-            "AMQ-JYP-Dry" => 15000000,
-            "AMQ-BPN-Reefer" => 27000000,
-            "AMQ-BPN-Dry" => 17000000,
-            "AMQ-BKS-Reefer" => 23000000,
-            "AMQ-BKS-Dry" => 14000000,
-            "AMQ-BGR-Reefer" => 24000000,
-            "AMQ-BGR-Dry" => 15000000,
-            "AMQ-BTH-Reefer" => 28000000,
-            "AMQ-BTH-Dry" => 18000000,
-            "AMQ-SMR-Reefer" => 25000000,
-            "AMQ-SMR-Dry" => 15000000,
-
-            // New SMR routes
-            "SMR-SBY-Reefer" => 25000000,
-            "SMR-SBY-Dry" => 16000000,
-            "SMR-MKS-Reefer" => 27000000,
-            "SMR-MKS-Dry" => 17000000,
-            "SMR-MDN-Reefer" => 29000000,
-            "SMR-MDN-Dry" => 19000000,
-            "SMR-JYP-Reefer" => 26000000,
-            "SMR-JYP-Dry" => 16000000,
-            "SMR-BPN-Reefer" => 28000000,
-            "SMR-BPN-Dry" => 18000000,
-            "SMR-BKS-Reefer" => 24000000,
-            "SMR-BKS-Dry" => 15000000,
-            "SMR-BGR-Reefer" => 25000000,
-            "SMR-BGR-Dry" => 16000000,
-            "SMR-BTH-Reefer" => 29000000,
-            "SMR-BTH-Dry" => 19000000,
-            "SMR-AMQ-Reefer" => 26000000,
-            "SMR-AMQ-Dry" => 16000000,
-        ];
     }
 
     private function randomGaussian()
@@ -516,24 +353,6 @@ class CardController extends Controller
         $u = mt_rand() / mt_getrandmax();
         $v = mt_rand() / mt_getrandmax();
         return sqrt(-2 * log($u)) * cos(2 * pi() * $v);
-    }
-
-    private function generateContainerColor($destination)
-    {
-        $colorMap = [
-            'SBY' => 'red',
-            'MKS' => 'blue',
-            'MDN' => 'green',
-            'JYP' => 'yellow',
-            'BPN' => 'purple',
-            'BKS' => 'orange',
-            'BGR' => 'pink',
-            'BTH' => 'brown',
-            'AMQ' => 'cyan',
-            'SMR' => 'teal',
-        ];
-
-        return $colorMap[$destination] ?? 'gray';
     }
 
     public function importFromExcel(Request $request, Deck $deck)
@@ -551,7 +370,7 @@ class CardController extends Controller
 
         $dataRows = array_slice($rows, 11);
 
-        $validPorts = ["SBY", "MKS", "MDN", "JYP", "BPN", "BKS", "BGR", "BTH"];
+        $validPorts = ["SBY", "MDN", "MKS", "JYP", "BPN", "BKS", "BGR", "BTH", "AMQ", "SMR"];
         $createdCards = [];
         $errors = [];
 
@@ -623,13 +442,17 @@ class CardController extends Controller
 
                 $revenue = $quantity * $revenuePerContainer;
 
-                if (Card::where('id', $id)->exists()) {
-                    $errors[] = "Row " . ($index + 12) . ": Card with ID $id already exists";
+                if (Card::where('id', $id)
+                    ->where('deck_id', $deck->id)
+                    ->exists()
+                ) {
+                    $errors[] = "Row " . ($index + 12) . ": Card with ID $id already exists in this deck";
                     continue;
                 }
 
                 $card = Card::create([
                     'id' => $id,
+                    'deck_id' => $deck->id,
                     'type' => $type,
                     'priority' => $priority,
                     'origin' => $origin,
@@ -643,10 +466,9 @@ class CardController extends Controller
                     $card->containers()->create([
                         'color' => $color,
                         'type' => $type,
+                        'deck_id' => $deck->id,
                     ]);
                 }
-
-                $deck->cards()->attach($card->id);
 
                 $createdCards[] = $card;
             }
@@ -673,12 +495,20 @@ class CardController extends Controller
 
     private function destroyAllCardsInDeck(Deck $deck)
     {
-        // Clear existing cards
-        if ($deck->cards()->count() > 0) {
-            foreach ($deck->cards as $card) {
-                $deck->cards()->detach($card->id);
-                $card->delete();
+        try {
+            if ($deck->cards()->count() > 0) {
+                foreach ($deck->cards as $card) {
+                    $card->containers()
+                        ->where('deck_id', $deck->id)
+                        ->delete();
+                    Card::where('id', $card->id)
+                        ->where('deck_id', $deck->id)
+                        ->delete();
+                }
             }
+            return true;
+        } catch (\Exception $e) {
+            return false;
         }
     }
 }

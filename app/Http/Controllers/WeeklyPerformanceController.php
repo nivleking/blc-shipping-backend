@@ -13,8 +13,101 @@ use Illuminate\Http\Request;
 class WeeklyPerformanceController extends Controller
 {
     /**
-     * Get weekly performance data for a user in a specific room and week
+     * Get financial summary including estimated penalties
      */
+    public function getFinancialSummary($roomId, $userId)
+    {
+        $shipBay = ShipBay::where('room_id', $roomId)
+            ->where('user_id', $userId)
+            ->first();
+
+        if (!$shipBay) {
+            return response()->json([
+                'error' => 'Ship bay not found'
+            ], 404);
+        }
+
+        $room = Room::find($roomId);
+        $moveCost = $room ? $room->move_cost : 0;
+
+        // Get capacity uptake for current round to calculate revenue from accepted cards
+        $currentRound = $shipBay->current_round;
+        $capacityUptake = CapacityUptake::where('room_id', $roomId)
+            ->where('user_id', $userId)
+            ->where('week', $currentRound)
+            ->first();
+
+        // Get the controller instance to calculate penalties
+        $roomController = new RoomController();
+
+        // Calculate unrolled penalties
+        $unrolledPenaltyData = $roomController->calculateUnrolledPenalties($room, $userId, $shipBay, $shipBay->current_round);
+        $unrolledPenalty = $unrolledPenaltyData['penalty'] ?? 0;
+        $unrolledContainerCounts = $unrolledPenaltyData['container_counts'] ?? [];
+
+        // Calculate dock warehouse penalties
+        $dockWarehouseData = $roomController->calculateDockWarehouse($room, $userId, $shipBay->current_round + 1);
+        $dockWarehousePenalty = $dockWarehouseData['penalty'] ?? 0;
+        $dockWarehouseContainerCounts = $dockWarehouseData['container_counts'] ?? [];
+
+        // Calculate restowage penalties
+        $restowageData = $roomController->calculateRestowagePenalties($room, $userId);
+        $restowagePenalty = $restowageData['penalty'] ?? 0;
+        $restowageContainerCount = $restowageData['container_count'] ?? 0;
+        $restowageMoves = $restowageData['restowage_moves'] ?? 0;
+
+        // Calculate total moves cost
+        $totalMoves = $shipBay->discharge_moves + $shipBay->load_moves;
+        $movesPenalty = $totalMoves * $moveCost;
+
+        // Calculate total penalties
+        $totalPenalty = $movesPenalty + $dockWarehousePenalty + $unrolledPenalty + $restowagePenalty;
+
+        // Get revenue from capacity uptake accepted cards
+        $revenue = 0;
+        // if ($capacityUptake && is_array($capacityUptake->accepted_cards)) {
+        //     foreach ($capacityUptake->accepted_cards as $card) {
+        //         if (isset($card['revenue'])) {
+        //             $revenue += (int)$card['revenue'];
+        //         }
+        //     }
+        // } else {
+        //     // Fallback to ShipBay revenue if capacity uptake data isn't available
+        // }
+        $revenue = $shipBay->total_revenue ?? 0;
+
+        $finalRevenue = $revenue - $totalPenalty;
+
+        // Get cost rates from room model
+        $dockWarehouseCosts = $room ? $room->dock_warehouse_costs : [];
+        $restowageCost = $room ? $room->restowage_cost : 0;
+
+        // Get unrolled cost rates from market intelligence
+        $unrolledCostRates = $unrolledPenaltyData['rates'] ?? [];
+
+        return response()->json([
+            'dock_warehouse_costs' => $dockWarehouseCosts,
+            'restowage_cost' => $restowageCost,
+            'unrolled_cost_rates' => $unrolledCostRates,
+            'revenue' => $revenue,
+            'load_moves' => $shipBay->load_moves,
+            'discharge_moves' => $shipBay->discharge_moves,
+            'total_moves' => $totalMoves,
+            'move_cost' => $moveCost,
+            'moves_penalty' => $movesPenalty,
+            'dock_warehouse_penalty' => $dockWarehousePenalty,
+            'unrolled_penalty' => $unrolledPenalty,
+            'restowage_penalty' => $restowagePenalty,
+            'total_penalty' => $totalPenalty,
+            'final_revenue' => $finalRevenue,
+            // Add container counts
+            'unrolled_container_counts' => $unrolledContainerCounts,
+            'dock_warehouse_container_counts' => $dockWarehouseContainerCounts,
+            'restowage_container_count' => $restowageContainerCount,
+            'restowage_moves' => $restowageMoves
+        ]);
+    }
+
     public function getWeeklyPerformance($roomId, $userId, $week = null)
     {
         // If week is not provided, get the current week from ShipBay
@@ -36,13 +129,86 @@ class WeeklyPerformanceController extends Controller
             ->where('week', $week)
             ->first();
 
-        if (!$performance) {
-            // Calculate performance data if it doesn't exist
-            $performance = $this->calculateWeeklyPerformance($roomId, $userId, $week);
+        // if (!$performance) {
+        //     // If no record found, create it using financial summary data
+        //     $room = Room::find($roomId);
+        //     if ($room) {
+        //         $roomController = new RoomController();
+        //         $performance = $roomController->finalizeWeeklyPerformance($room, $userId, $week);
+        //     }
+        // }
+
+        // Get ship bay for additional data
+        $shipBay = ShipBay::where('room_id', $roomId)
+            ->where('user_id', $userId)
+            ->first();
+
+        // Get financial summary from ShipBayController for consistent data
+        $shipBayController = new ShipBayController();
+        $financialSummary = null;
+
+        if ($shipBay) {
+            $financialSummaryResponse = $shipBayController->getFinancialSummary($roomId, $userId);
+            $financialSummary = json_decode($financialSummaryResponse->getContent(), true);
+        }
+
+        // Enhance response with financial data
+        $responseData = $performance ? $performance->toArray() : [];
+        if ($financialSummary) {
+            $responseData['financial_summary'] = $financialSummary;
         }
 
         return response()->json([
-            'data' => $performance
+            'data' => $responseData
+        ], 200);
+    }
+
+    public function getAllWeeklyPerformance($roomId, $userId)
+    {
+        // Get all weeks' performance for this user/room
+        $performances = WeeklyPerformance::where('room_id', $roomId)
+            ->where('user_id', $userId)
+            ->orderBy('week', 'asc')
+            ->get();
+
+        // Calculate cumulative revenue for trend analysis
+        $cumulativeRevenue = 0;
+        $enhancedPerformances = [];
+
+        foreach ($performances as $performance) {
+            // Parse JSON fields if they're stored as strings
+            $unrolledCounts = is_string($performance->unrolled_container_counts)
+                ? json_decode($performance->unrolled_container_counts, true)
+                : $performance->unrolled_container_counts;
+
+            $dockWarehouseCounts = is_string($performance->dock_warehouse_container_counts)
+                ? json_decode($performance->dock_warehouse_container_counts, true)
+                : $performance->dock_warehouse_container_counts;
+
+            // Update cumulative revenue
+            $cumulativeRevenue += $performance->net_result;
+
+            // Build enhanced performance data
+            $enhancedPerformances[] = [
+                'week' => $performance->week,
+                'discharge_moves' => $performance->discharge_moves,
+                'load_moves' => $performance->load_moves,
+                'restowage_moves' => $performance->restowage_moves,
+                'restowage_penalty' => $performance->restowage_penalty,
+                'unrolled_container_counts' => $unrolledCounts,
+                'dock_warehouse_container_counts' => $dockWarehouseCounts,
+                'total_penalty' => $performance->total_penalty,
+                'dock_warehouse_penalty' => $performance->dock_warehouse_penalty,
+                'unrolled_penalty' => $performance->unrolled_penalty,
+                'revenue' => $performance->revenue,
+                'net_result' => $performance->net_result,
+                'cumulative_revenue' => $cumulativeRevenue
+            ];
+        }
+
+        return response()->json([
+            'data' => $enhancedPerformances,
+            'total_cumulative_revenue' => $cumulativeRevenue
         ], 200);
     }
 
@@ -114,14 +280,14 @@ class WeeklyPerformanceController extends Controller
         $moveCosts = ($shipBay->discharge_moves + $shipBay->load_moves) * $moveCost;
 
         // Get extra moves penalty and data directly from ship bay
-        $extraMovesPenalty = $shipBay->extra_moves_penalty ?? 0;
-        $longCraneMoves = $shipBay->long_crane_moves ?? 0;
-        $extraMovesOnLongCrane = $shipBay->extra_moves_on_long_crane ?? 0;
-        $idealCraneSplit = $room->ideal_crane_split ?? 2;
+        // $extraMovesPenalty = $shipBay->extra_moves_penalty ?? 0;
+        // $longCraneMoves = $shipBay->long_crane_moves ?? 0;
+        // $extraMovesOnLongCrane = $shipBay->extra_moves_on_long_crane ?? 0;
+        // $idealCraneSplit = $room->ideal_crane_split ?? 2;
 
         // Calculate net result
         $revenue = $shipBay->revenue;
-        $netResult = $revenue - $moveCosts - $extraMovesPenalty;
+        $netResult = $revenue - $moveCosts;
 
         // Create or update weekly performance record
         $performance = WeeklyPerformance::updateOrCreate(
@@ -141,13 +307,13 @@ class WeeklyPerformanceController extends Controller
                 'non_committed_reefer_containers_not_loaded' => $nonCommittedReeferContainersNotLoaded,
                 'revenue' => $revenue,
                 'move_costs' => $moveCosts,
-                'extra_moves_penalty' => $extraMovesPenalty,
                 'net_result' => $netResult,
                 'discharge_moves' => $shipBay->discharge_moves,
                 'load_moves' => $shipBay->load_moves,
-                'long_crane_moves' => $longCraneMoves,
-                'extra_moves_on_long_crane' => $extraMovesOnLongCrane,
-                'ideal_crane_split' => $idealCraneSplit
+                // 'extra_moves_penalty' => $extraMovesPenalty,
+                // 'long_crane_moves' => $longCraneMoves,
+                // 'extra_moves_on_long_crane' => $extraMovesOnLongCrane,
+                // 'ideal_crane_split' => $idealCraneSplit
             ]
         );
 

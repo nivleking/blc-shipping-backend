@@ -19,13 +19,16 @@ return new class extends Migration
             $table->integer('week');
             $table->unsignedBigInteger('discharge_moves')->default(0);
             $table->unsignedBigInteger('load_moves')->default(0);
-            $table->json('bay_pairs')->nullable();
             $table->json('bay_moves')->nullable();
-            $table->integer('long_crane_moves')->default(0);
-            $table->integer('extra_moves_on_long_crane')->default(0);
-            $table->timestamps();
+            $table->bigInteger('restowage_penalty')->default(0);
+            $table->bigInteger('restowage_moves')->default(0);
 
+            $table->timestamps();
+            
             $table->unique(['user_id', 'room_id', 'week']);
+            // $table->json('bay_pairs')->nullable();
+            // $table->integer('long_crane_moves')->default(0);
+            // $table->integer('extra_moves_on_long_crane')->default(0);
         });
     }
 

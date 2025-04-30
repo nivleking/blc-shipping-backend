@@ -11,9 +11,11 @@ class Card extends Model
 
     public $incrementing = false;
     protected $keyType = 'string';
+    protected $primaryKey = 'id';
 
     protected $fillable = [
         'id',
+        'deck_id',
         'type',
         'priority',
         'origin',
@@ -37,13 +39,30 @@ class Card extends Model
         'is_initial' => 'boolean',
     ];
 
-    public function decks()
+    public function getRouteKeyName()
     {
-        return $this->belongsToMany(Deck::class, 'card_deck', 'card_id', 'deck_id');
+        return 'id';
+    }
+
+    public static function findByKeys($id, $deckId)
+    {
+        return static::where('id', $id)->where('deck_id', $deckId)->first();
+    }
+
+    public function deck()
+    {
+        return $this->belongsTo(Deck::class);
     }
 
     public function containers()
     {
-        return $this->hasMany(Container::class);
+        return $this->hasMany(Container::class)
+            ->where('deck_id', $this->deck_id);
+    }
+
+    public function cardTemporaries()
+    {
+        return $this->hasMany(CardTemporary::class)
+            ->where('deck_id', $this->deck_id);
     }
 }

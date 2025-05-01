@@ -1872,7 +1872,7 @@ class RoomController extends Controller
             }
 
             $shipBays = [];
-
+            
             $baySize = json_decode($room->bay_size, true);
             $bayCount = $room->bay_count;
             $bayTypes = json_decode($room->bay_types, true);
@@ -1880,13 +1880,12 @@ class RoomController extends Controller
             // Get the deck with its cards to assign to users
             $deck = Deck::with('cards')->find($room->deck_id);
             $deckCards = $deck ? $deck->cards : collect([]);
-            $cardsLimitPerRound = $room->cards_limit_per_round;
 
             foreach ($ports as $userId => $port) {
                 $user = User::find($userId);
 
                 if ($user) {
-                    // EXISTING CODE: Create empty arena and generate initial containers
+                    // Create empty arena and generate initial containers
                     $emptyArena = array_fill(
                         0,
                         $bayCount,
@@ -1899,7 +1898,7 @@ class RoomController extends Controller
 
                     $flatArena = $this->generateInitialContainers($emptyArena, $port, $ports, $bayTypes);
 
-                    // EXISTING CODE: Create or update ship bay
+                    // Create or update ship bay
                     $shipBay = ShipBay::updateOrCreate(
                         ['user_id' => $user->id, 'room_id' => $room->id],
                         [
@@ -1917,7 +1916,7 @@ class RoomController extends Controller
                         ]
                     );
 
-                    // EXISTING CODE: Create capacity uptake
+                    // Create capacity uptake
                     CapacityUptake::updateOrCreate([
                         'user_id' => $userId,
                         'room_id' => $room->id,
@@ -1928,31 +1927,27 @@ class RoomController extends Controller
                         'arena_end' => null
                     ]);
 
-                    // NEW CODE: Filter and create card temporaries for this user
-                    $matchedCards = $deckCards->where('origin', $port)->values();
-
-                    // Delete existing card temporaries for this user/room
-                    CardTemporary::where([
-                        'user_id' => $userId,
-                        'room_id' => $room->id,
-                    ])->delete();
-
-                    // Create new card temporaries
-                    foreach ($matchedCards as $index => $card) {
-                        // Only assign round 1 to cards within the limit
-                        $cardRound = $index < $cardsLimitPerRound ? 1 : null;
-
-                        CardTemporary::create([
-                            'user_id' => $userId,
-                            'room_id' => $room->id,
+                    // Filter matched cards for this user's port
+                    $matchedCards = $deckCards->where('origin', $port)->values()->map(function ($card) use ($room) {
+                        return [
                             'card_id' => $card->id,
-                            'deck_id' => $room->deck_id,
-                            'status' => 'selected',
-                            'round' => $cardRound
-                        ]);
-                    }
+                            'deck_id' => $room->deck_id
+                        ];
+                    })->toArray();
 
-                    // EXISTING CODE: Initialize week 1 weekly performance
+                    // Use CardTemporaryController to create properly sorted cards
+                    $cardTempController = new CardTemporaryController();
+                    $batchRequest = new Request([
+                        'room_id' => $room->id,
+                        'user_id' => $userId,
+                        'round' => 1,
+                        'cards' => $matchedCards
+                    ]);
+
+                    // Call batchCreate method
+                    $cardTempController->batchCreate($batchRequest);
+
+                    // Initialize week 1 weekly performance
                     $this->finalizeWeeklyPerformance($room, $userId, 1);
 
                     $shipBays[] = $shipBay;

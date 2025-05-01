@@ -132,6 +132,9 @@ class CardTemporaryController extends Controller
             })
             ->orderByRaw('card_temporaries.is_backlog DESC')
             ->orderByRaw("CASE WHEN cards.priority = 'Committed' THEN 1 ELSE 2 END")
+            ->orderByRaw("LENGTH(card_temporaries.card_id) ASC") // Sort by card ID length first
+            ->orderByRaw("REGEXP_REPLACE(card_temporaries.card_id, '^(\\d)(\\d+)(\\d{2})$', '\\1\\2') + 0") // Then by port+week
+            ->orderByRaw("RIGHT(card_temporaries.card_id, 2) + 0") // Then by card number
             ->get();
 
         // Format the result to match what the frontend expects
@@ -219,13 +222,27 @@ class CardTemporaryController extends Controller
             $cardsLimitPerRound = $room->cards_limit_per_round;
             $roomPrefix = "R{$room->id}-"; // This is the prefix for room-specific cards
 
-            // Sort the cards by card_id in ascending order
+            // For the batchCreate method
             $sortedCards = collect($request->cards)
                 ->filter(function ($card) use ($roomPrefix) {
                     return !str_starts_with($card['card_id'], $roomPrefix);
                 })
                 ->sortBy(function ($card) {
-                    return (int)$card['card_id'];
+                    $cardId = $card['card_id'];
+
+                    // First sort by number of digits (shorter IDs come first)
+                    $digitCount = strlen($cardId);
+
+                    // Then extract components for more detailed sorting
+                    if (preg_match('/^(\d)(\d+)(\d{2})$/', $cardId, $matches)) {
+                        [, $port, $week, $cardNum] = $matches;
+
+                        // Create a sortable key: digit_count + port + padded_week + card_number
+                        return $digitCount . '_' . $port . str_pad($week, 5, '0', STR_PAD_LEFT) . $cardNum;
+                    }
+
+                    // Fallback for any cards that don't match the pattern
+                    return $digitCount . '_' . $cardId;
                 })
                 ->values()
                 ->all();
@@ -315,13 +332,26 @@ class CardTemporaryController extends Controller
                     'room_id' => $roomId,
                 ])->delete();
 
-                // Sort and process cards for this user
                 $sortedCards = collect($batch['cards'])
                     ->filter(function ($card) use ($roomPrefix) {
                         return !str_starts_with($card['card_id'], $roomPrefix);
                     })
                     ->sortBy(function ($card) {
-                        return (int)$card['card_id'];
+                        $cardId = $card['card_id'];
+
+                        // First sort by number of digits (shorter IDs come first)
+                        $digitCount = strlen($cardId);
+
+                        // Then extract components for more detailed sorting
+                        if (preg_match('/^(\d)(\d+)(\d{2})$/', $cardId, $matches)) {
+                            [, $port, $week, $cardNum] = $matches;
+
+                            // Create a sortable key: digit_count + port + padded_week + card_number
+                            return $digitCount . '_' . $port . str_pad($week, 5, '0', STR_PAD_LEFT) . $cardNum;
+                        }
+
+                        // Fallback for any cards that don't match the pattern
+                        return $digitCount . '_' . $cardId;
                     })
                     ->values()
                     ->all();

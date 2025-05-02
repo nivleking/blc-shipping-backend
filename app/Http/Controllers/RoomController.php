@@ -1389,11 +1389,28 @@ class RoomController extends Controller
                 'card_temporaries.status' => 'selected',
                 'card_temporaries.round' => $currentRound,
             ])
+            ->where('cards.priority', 'Committed') // Hanya kartu committed
             ->select('card_temporaries.*', 'cards.type', 'cards.priority', 'cards.quantity', 'cards.revenue')
             ->limit(($cardsMustProcess - $processedCount))
             ->get();
 
-        if ($unprocessedCards->isEmpty()) {
+        $rejectedNonCommittedCards = CardTemporary::join('cards', function ($join) {
+            $join->on('cards.id', '=', 'card_temporaries.card_id')
+                ->on('cards.deck_id', '=', 'card_temporaries.deck_id');
+        })
+            ->where([
+                'card_temporaries.user_id' => $userId,
+                'card_temporaries.room_id' => $room->id,
+                'card_temporaries.status' => 'rejected',
+                'card_temporaries.round' => $currentRound,
+            ])
+            ->where('cards.priority', '!=', 'Committed') // Hanya kartu non-committed
+            ->select('card_temporaries.*', 'cards.type', 'cards.priority', 'cards.quantity', 'cards.revenue')
+            ->get();
+
+        $allPenalizedCards = $unprocessedCards->concat($rejectedNonCommittedCards);
+
+        if ($allPenalizedCards->isEmpty()) {
             return [
                 'penalty' => 0,
                 'unrolled_cards' => [],
@@ -1424,7 +1441,7 @@ class RoomController extends Controller
             'total' => 0
         ];
 
-        foreach ($unprocessedCards as $cardTemp) {
+        foreach ($allPenalizedCards as $cardTemp) {
             $isCommitted = strtolower($cardTemp->priority) === 'committed';
             $isDry = strtolower($cardTemp->type) === 'dry';
             $quantity = $cardTemp->quantity ?? 1;
@@ -1455,7 +1472,8 @@ class RoomController extends Controller
                 'revenue' => $cardTemp->revenue,
                 'penalty' => $cardPenalty,
                 'penalty_rate' => $penaltyRate,
-                'round' => $currentRound
+                'round' => $currentRound,
+                'status' => $cardTemp->status
             ];
 
             // Update container counts
@@ -1668,7 +1686,9 @@ class RoomController extends Controller
         $totalPenalty = 0;
 
         foreach ($containerIds as $containerId) {
-            $container = Container::with('card')->find($containerId);
+            $container = Container::where('id', $containerId)
+                ->where('deck_id', $room->deck_id)
+                ->first();
             if (!$container) continue;
 
             $containerType = strtolower($container->type ?? 'dry');
@@ -1872,7 +1892,7 @@ class RoomController extends Controller
             }
 
             $shipBays = [];
-            
+
             $baySize = json_decode($room->bay_size, true);
             $bayCount = $room->bay_count;
             $bayTypes = json_decode($room->bay_types, true);

@@ -13,6 +13,8 @@ class UserSeeder extends Seeder
      */
     public function run(): void
     {
+        // THIS IS FOR LOCAL
+        // COMMENT FOR PRODUCTION
         $user = new User();
         $user->name = 'user1';
         $user->email = 'user1@mail.com';
@@ -51,6 +53,53 @@ class UserSeeder extends Seeder
         User::create([
             'name' => 'superadmin',
             'email' => 'superadmin@blc-shipping.com',
+            'password' => bcrypt('password'),
+            'password_plain' => 'password',
+            'is_admin' => true,
+            'is_super_admin' => true,
+            'created_by' => 1,
+            'updated_by' => 1,
+            'status' => 'active',
+        ]);
+
+        $user = new User();
+        $user->name = 'sidharta1';
+        $user->email = 'sidharta1@mail.com';
+        $user->is_admin = false;
+        $user->password = bcrypt('12');
+        $user->save();
+
+        $user = new User();
+        $user->name = 'sidharta';
+        $user->email = 'sidharta@mail.com';
+        $user->is_admin = false;
+        $user->password = bcrypt('12');
+        $user->save();
+
+        $user = new User();
+        $user->name = 'sidharta3';
+        $user->email = 'sidharta3@mail.com';
+        $user->is_admin = false;
+        $user->password = bcrypt('12');
+        $user->save();
+
+        $user = new User();
+        $user->name = 'sidharta4';
+        $user->email = 'sidharta4@mail.com';
+        $user->is_admin = false;
+        $user->password = bcrypt('12');
+        $user->save();
+
+        $user = new User();
+        $user->name = 'sidharta5';
+        $user->email = 'sidharta5@mail.com';
+        $user->is_admin = false;
+        $user->password = bcrypt('12');
+        $user->save();
+
+        User::create([
+            'name' => 'megasuperadmin',
+            'email' => 'megasuperadmin@blc-shipping.com',
             'password' => bcrypt('password'),
             'password_plain' => 'password',
             'is_admin' => true,

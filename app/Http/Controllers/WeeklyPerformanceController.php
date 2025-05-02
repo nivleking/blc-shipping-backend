@@ -61,7 +61,7 @@ class WeeklyPerformanceController extends Controller
         $movesPenalty = $totalMoves * $moveCost;
 
         // Calculate total penalties
-        $totalPenalty = $movesPenalty + $dockWarehousePenalty + $unrolledPenalty + $restowagePenalty;
+        $totalPenalty = $dockWarehousePenalty + $unrolledPenalty + $restowagePenalty;
 
         // Get revenue from capacity uptake accepted cards
         $revenue = 0;

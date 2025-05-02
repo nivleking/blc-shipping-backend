@@ -12,9 +12,9 @@ trait UtilitiesHelper
             // Non-committed dry containers
             'dry_non_committed' => 2_000_000,
             // Committed reefer containers
-            'reefer_committed' => 6_000_000,
+            'reefer_committed' => 8_000_000,
             // Non-committed reefer containers
-            'reefer_non_committed' => 8_000_000
+            'reefer_non_committed' => 6_000_000
         ];
     }
 

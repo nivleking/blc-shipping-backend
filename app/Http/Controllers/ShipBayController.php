@@ -138,7 +138,7 @@ class ShipBayController extends Controller
 
                 'bay_statistics' => [
                     'bay_moves' => json_decode($shipBay->bay_moves, true) ?? [],
-                    'dock_warehouse_penalty' => $shipBay->dock_warehouse_containers,
+                    'dock_warehouse_containers' => $shipBay->dock_warehouse_containers,
                 ],
             ];
 

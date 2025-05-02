@@ -37,10 +37,6 @@ class ShipBayController extends Controller
                 ->where('user_id', $userId)
                 ->first();
 
-            if (!$shipBay) {
-                return response()->json(['error' => 'Ship bay not found'], 404);
-            }
-
             // 3. Get config (bay configuration)
             $baySize = json_decode($room->bay_size, true);
             $bayCount = $room->bay_count;
@@ -75,6 +71,75 @@ class ShipBayController extends Controller
             $unfulfilledContainers = [];
             foreach ($cardTemporaries as $card) {
                 $unfulfilledContainers[$card->card_id] = $card->unfulfilled_containers;
+            }
+
+            // 9. Extract container IDs from arenas and get their destinations
+            $containerIds = [];
+
+            // Extract from bay arena
+            if ($shipBay && $shipBay->arena) {
+                $bayArena = is_string($shipBay->arena) ? json_decode($shipBay->arena, true) : $shipBay->arena;
+
+                // Handle flat format with containers array
+                if (isset($bayArena['containers'])) {
+                    foreach ($bayArena['containers'] as $container) {
+                        if (isset($container['id'])) {
+                            $containerIds[] = $container['id'];
+                        }
+                    }
+                }
+                // Handle older 2D array format
+                else if (is_array($bayArena)) {
+                    foreach ($bayArena as $bay) {
+                        if (is_array($bay)) {
+                            foreach ($bay as $row) {
+                                if (is_array($row)) {
+                                    foreach ($row as $containerId) {
+                                        if ($containerId) {
+                                            $containerIds[] = $containerId;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Extract from dock arena
+            if ($shipDock && $shipDock->arena) {
+                $dockArena = is_string($shipDock->arena) ? json_decode($shipDock->arena, true) : $shipDock->arena;
+
+                // Handle flat format with containers array
+                if (isset($dockArena['containers'])) {
+                    foreach ($dockArena['containers'] as $container) {
+                        if (isset($container['id'])) {
+                            $containerIds[] = $container['id'];
+                        }
+                    }
+                }
+                // Handle older format (array of positions)
+                else if (is_array($dockArena)) {
+                    foreach ($dockArena as $position => $containerId) {
+                        if ($containerId) {
+                            $containerIds[] = $containerId;
+                        }
+                    }
+                }
+            }
+
+            // Get container destinations (same logic as ContainerController::getContainerDestinations)
+            $containerDestinations = [];
+            if (!empty($containerIds)) {
+                $containersWithDestinations = Container::whereIn('id', $containerIds)
+                    ->where('deck_id', $room->deck_id)
+                    ->get();
+
+                foreach ($containersWithDestinations as $container) {
+                    if ($container->card) {
+                        $containerDestinations[$container->id] = $container->card->destination;
+                    }
+                }
             }
 
             // Prepare consolidated response
@@ -140,6 +205,9 @@ class ShipBayController extends Controller
                     'bay_moves' => json_decode($shipBay->bay_moves, true) ?? [],
                     'dock_warehouse_containers' => $shipBay->dock_warehouse_containers,
                 ],
+
+                // Container destinations data
+                'container_destinations' => $containerDestinations,
             ];
 
             return response()->json($response, 200);
@@ -167,6 +235,10 @@ class ShipBayController extends Controller
             'moved_container.id' => 'sometimes|exists:containers,id',
             'moved_container.from' => 'sometimes|string',
             'moved_container.to' => 'sometimes|string',
+            'move_type' => 'sometimes|string|in:discharge,load',
+            'count' => 'sometimes|integer|min:1',
+            'bay_index' => 'sometimes|integer|min:0',
+            'container_id' => 'sometimes|exists:containers,id',
         ]);
 
         $room = Room::find($validatedData['room_id']);
@@ -230,6 +302,30 @@ class ShipBayController extends Controller
                     $movingToBay
                 );
             }
+        }
+
+        if (
+            isset($validatedData['move_type']) &&
+            isset($validatedData['count']) &&
+            isset($validatedData['bay_index'])
+        ) {
+            // Use incrementMoves directly instead of creating a new function
+            $moveTrackingRequest = new Request([
+                'move_type' => $validatedData['move_type'],
+                'count' => $validatedData['count'],
+                'bay_index' => $validatedData['bay_index'],
+                'container_id' => $validatedData['container_id'] ?? null,
+                'arena' => $validatedData['arena'],
+            ]);
+
+            // Call incrementMoves method directly
+            $moveResponse = $this->incrementMoves($moveTrackingRequest, $validatedData['room_id'], $validatedData['user_id']);
+
+            // Add move tracking data to response
+            return response()->json([
+                'shipBay' => $shipBay,
+                'moveTracking' => $moveResponse->original
+            ], 201);
         }
 
         return response()->json($shipBay, 201);

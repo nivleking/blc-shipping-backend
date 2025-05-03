@@ -273,7 +273,7 @@ class ShipBayController extends Controller
         );
 
         $shipBay->arena = json_encode($arenaData);
-        $shipBay->section = $validatedData['section'] ?? $shipBay->section ?? 'section1';
+        $shipBay->section = $validatedData['section'] ?? $shipBay->section;
         $shipBay->save();
         // $shipBay->revenue = $validatedData['revenue'] ?? $shipBay->revenue ?? 0;
         // $shipBay->total_revenue = ($shipBay->revenue ?? 0) - ($shipBay->penalty ?? 0);
@@ -933,17 +933,18 @@ class ShipBayController extends Controller
     public function incrementCards(Request $request, $roomId, $userId)
     {
         $validatedData = $request->validate([
-            'card_action' => 'required|in:accept,reject',
-            'count' => 'required|integer|min:1'
+            'card_action' => 'required|string|in:accept,reject',
+            'count' => 'required|integer|min:1',
+            'card_temporary_id' => 'sometimes|required|exists:cards,id',
+            'card' => 'sometimes|required|array',
+            'port' => 'sometimes|required|string',
+            'dock_arena' => 'sometimes|required|array',
+            'dock_size' => 'sometimes|required|array',
         ]);
 
         $shipBay = ShipBay::where('room_id', $roomId)
             ->where('user_id', $userId)
             ->first();
-
-        if (!$shipBay) {
-            return response()->json(['message' => 'Ship bay not found'], 404);
-        }
 
         $room = Room::find($roomId);
 
@@ -958,14 +959,60 @@ class ShipBayController extends Controller
         $totalProcessed = $shipBay->accepted_cards + $shipBay->rejected_cards;
         $isLimitExceeded = $totalProcessed >= $room->cards_limit_per_round;
 
+        // Handle capacity uptake if data provided
+        $capacityUptakeData = null;
+        if ($request->has('card') && $request->has('port')) {
+            $capacityUptakeController = new CapacityUptakeController();
+            $capacityUptakeData = $capacityUptakeController->updateCapacityUptake($request, $roomId, $userId, $shipBay->current_round);
+        }
+
+        // Handle card temporary if ID provided
+        $unfulfilledContainers = [];
+        if ($request->has('card_temporary_id') && $request->card_action === 'accept') {
+            $cardTemporaryController = new CardTemporaryController();
+            $cardTempResult = $cardTemporaryController->acceptCardTemporary(new Request([
+                'room_id' => $roomId,
+                'card_temporary_id' => $request->card_temporary_id,
+                'round' => $shipBay->current_round,
+            ]));
+
+            // Get unfulfilled containers
+            $unfulfilledData = $cardTemporaryController->getUnfulfilledContainers($roomId, $userId);
+            $unfulfilledContainers = $unfulfilledData->original;
+        } else if ($request->has('card_temporary_id') && $request->card_action === 'reject') {
+            $cardTemporaryController = new CardTemporaryController();
+            $cardTemporaryController->rejectCardTemporary(new Request([
+                'room_id' => $roomId,
+                'card_temporary_id' => $request->card_temporary_id,
+                'round' => $shipBay->current_round,
+            ]));
+        }
+
+        $dockResponse = null;
+        if ($request->has('dock_arena') && $request->has('dock_size')) {
+            $shipDock = ShipDock::updateOrCreate(
+                ['user_id' => $userId, 'room_id' => $roomId],
+                [
+                    'arena' => json_encode($request->dock_arena),
+                    'dock_size' => json_encode($request->dock_size),
+                ]
+            );
+
+            $dockResponse = [
+                'message' => 'Ship dock updated successfully',
+                'shipDock' => $shipDock
+            ];
+        }
+
         return response()->json([
             'processed_cards' => $shipBay->processed_cards,
-            'current_round_cards' => $shipBay->current_round_cards,
+            'is_limit_exceeded' => $isLimitExceeded,
             'accepted_cards' => $shipBay->accepted_cards,
             'rejected_cards' => $shipBay->rejected_cards,
-            'must_process_complete' => $shipBay->processed_cards >= $room->cards_must_process_per_round,
-            'limit_exceeded' => $isLimitExceeded,
-            'remaining_cards' => max(0, $room->cards_limit_per_round - $totalProcessed)
+            'current_round_cards' => $shipBay->current_round_cards,
+            'unfulfilled_containers' => $unfulfilledContainers,
+            'capacity_uptake' => $capacityUptakeData ? $capacityUptakeData->original : null,
+            'dock_data' => $dockResponse,
         ]);
     }
 

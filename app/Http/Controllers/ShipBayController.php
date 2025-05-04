@@ -43,7 +43,16 @@ class ShipBayController extends Controller
             $bayTypes = json_decode($room->bay_types, true);
 
             // 4. Get all containers
-            $containers = Container::with('card')->get();
+            // Get cards to know which cards are relevant for this room
+            $cardsByRoomId = Card::where('deck_id', $room->deck_id);
+
+            // Get the relevant card IDs from the cards
+            $relevantCardIds = $cardsByRoomId->pluck('id')->toArray();
+
+            // Get all containers for these cards, filtered by deck_id
+            $containers = Container::whereIn('card_id', $relevantCardIds)
+                ->where('deck_id', $room->deck_id)
+                ->get();
 
             // 5. Get ship dock data
             $shipDock = ShipDock::where('user_id', $userId)
@@ -304,6 +313,10 @@ class ShipBayController extends Controller
             }
         }
 
+        // Calculate rankings
+        $roomController = new RoomController();
+        $rankings = $roomController->getUsersRanking($validatedData['room_id']);
+
         if (
             isset($validatedData['move_type']) &&
             isset($validatedData['count']) &&
@@ -324,11 +337,15 @@ class ShipBayController extends Controller
             // Add move tracking data to response
             return response()->json([
                 'shipBay' => $shipBay,
-                'moveTracking' => $moveResponse->original
+                'moveTracking' => $moveResponse->original,
+                'rankings' => $rankings->original,
             ], 201);
         }
 
-        return response()->json($shipBay, 201);
+        return response()->json([
+            'shipBay' => $shipBay,
+            'rankings' => $rankings->original,
+        ], 201);
     }
 
     /**

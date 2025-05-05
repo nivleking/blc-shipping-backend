@@ -138,6 +138,7 @@ Route::get('rooms/{roomId}/users/{userId}/bay-capacity', [RoomController::class,
 // Route::post('rooms/{room}/create-card-temporary/{user}', [RoomController::class, 'createCardTemporary'])->middleware('auth:sanctum', 'admin');
 Route::get('card-temporary/{roomId}/{userId}', [CardTemporaryController::class, 'getCardTemporaries']);
 Route::get('card-temporary/unfulfilled/{roomId}/{userId}', [CardTemporaryController::class, 'getUnfulfilledContainers']);
+Route::get('/card-temporary/all-cards/{roomId}/{deckId}', [CardTemporaryController::class, 'getAllCardTemporaries']);
 Route::post('card-temporary/accept', [CardTemporaryController::class, 'acceptCardTemporary']);
 Route::post('card-temporary/reject', [CardTemporaryController::class, 'rejectCardTemporary']);
 Route::post('card-temporary/batch', [CardTemporaryController::class, 'batchCreate']);

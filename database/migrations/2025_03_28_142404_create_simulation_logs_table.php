@@ -16,8 +16,14 @@ return new class extends Migration
             $table->foreignId('user_id')->constrained();
             $table->string('room_id');
             $table->foreign('room_id')->references('id')->on('rooms')->onDelete('cascade');
-            $table->json('arena');
-            $table->unsignedBigInteger('revenue')->default(0);
+            $table->json('arena_bay');
+            $table->json('arena_dock');
+            $table->string('port');
+            $table->string('section');
+            $table->bigInteger('total_revenue')->default(0);
+            $table->integer('round')->default(1);
+            $table->bigInteger('revenue')->default(0);
+            $table->bigInteger('penalty')->default(0);
             $table->timestamps();
         });
     }

@@ -9,9 +9,21 @@ class SimulationLog extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['arena', 'port', 'user_id', 'room_id', 'revenue'];
+    protected $fillable = [
+        'user_id',
+        'room_id',
+        'arena_bay',
+        'arena_dock',
+        'port',
+        'section',
+        'total_revenue',
+        'round',
+        'revenue',
+        'penalty',
+    ];
 
     protected $casts = [
-        'arena' => 'array',
+        'arena_bay' => 'array',
+        'arena_dock' => 'array',
     ];
 }

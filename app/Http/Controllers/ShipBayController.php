@@ -9,6 +9,7 @@ use App\Models\Container;
 use App\Models\Room;
 use App\Models\ShipBay;
 use App\Models\ShipDock;
+use App\Models\SimulationLog;
 use App\Models\WeeklyPerformance;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -248,6 +249,7 @@ class ShipBayController extends Controller
             'count' => 'sometimes|integer|min:1',
             'bay_index' => 'sometimes|integer|min:0',
             'container_id' => 'sometimes|exists:containers,id',
+            'isLog' => 'sometimes|boolean',
         ]);
 
         $room = Room::find($validatedData['room_id']);
@@ -310,6 +312,29 @@ class ShipBayController extends Controller
                     $validatedData['room_id'],
                     $movingToBay
                 );
+            }
+        }
+
+        if (isset($validatedData['isLog']) && $validatedData['isLog'] === true) {
+            // Get the ship dock data
+            $shipDock = ShipDock::where('user_id', $validatedData['user_id'])
+                ->where('room_id', $validatedData['room_id'])
+                ->first();
+
+            if ($shipDock) {
+                // Create simulation log
+                SimulationLog::create([
+                    'user_id' => $validatedData['user_id'],
+                    'room_id' => $validatedData['room_id'],
+                    'arena_bay' => $shipBay->arena,
+                    'arena_dock' => $shipDock->arena,
+                    'port' => $shipBay->port,
+                    'section' => $shipBay->section,
+                    'round' => $shipBay->current_round,
+                    'revenue' => $shipBay->revenue ?? 0,
+                    'penalty' => $shipBay->penalty ?? 0,
+                    'total_revenue' => $shipBay->total_revenue,
+                ]);
             }
         }
 
@@ -1019,6 +1044,22 @@ class ShipBayController extends Controller
                 'message' => 'Ship dock updated successfully',
                 'shipDock' => $shipDock
             ];
+        }
+
+        // After all operations are complete, create a simulation log
+        if ($validatedData['card_action'] === 'accept') {
+            SimulationLog::create([
+                'user_id' => $userId,
+                'room_id' => $roomId,
+                'arena_bay' => $shipBay->arena,
+                'arena_dock' => $shipDock->arena,
+                'port' => $shipBay->port,
+                'section' => $shipBay->section,
+                'round' => $shipBay->current_round,
+                'revenue' => $shipBay->revenue ?? 0,
+                'penalty' => $shipBay->penalty ?? 0,
+                'total_revenue' => $shipBay->total_revenue,
+            ]);
         }
 
         return response()->json([

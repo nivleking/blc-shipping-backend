@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Room;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -324,6 +325,32 @@ class UserController extends Controller
         return response()->json([
             'success' => true,
             'password' => $user->password_plain
+        ]);
+    }
+    public function getUserRooms($userId)
+    {
+        $user = User::findOrFail($userId);
+
+        $rooms = Room::where(function ($query) use ($userId) {
+            // Pattern for finding user ID in arrays like [1,2,3] or [1, 2, 3]
+            $patterns = [
+                '[' . $userId . ',',
+                ',' . $userId . ',',
+                ',' . $userId . ']',
+                '[' . $userId . ']',
+            ];
+
+            foreach ($patterns as $pattern) {
+                $query->orWhere('users', 'LIKE', '%' . $pattern . '%')
+                    ->orWhere('assigned_users', 'LIKE', '%' . $pattern . '%');
+            }
+        })
+            ->where('status', 'finished')
+            ->orderBy('updated_at', 'desc')
+            ->get();
+
+        return response()->json([
+            'rooms' => $rooms
         ]);
     }
 }

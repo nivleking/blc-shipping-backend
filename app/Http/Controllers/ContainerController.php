@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Container;
+use App\Models\Room;
 use Illuminate\Http\Request;
 
 class ContainerController extends Controller
@@ -76,13 +77,10 @@ class ContainerController extends Controller
 
     public function getContainersByRoom($roomId)
     {
-        $containers = Container::whereHas('card', function ($query) use ($roomId) {
-            $query->whereHas('cardTemporaries', function ($q) use ($roomId) {
-                $q->where('room_id', $roomId)
-                    ->where('status', 'accepted');
-            });
-        })
-            ->with('card:id,destination,type,quantity,deck_id')
+        $room = Room::find($roomId);
+        $deckId = $room->deck_id;
+        $containers = Container::where('deck_id', $deckId)
+            ->with('card:id,destination,type,quantity')
             ->get();
 
         return response()->json($containers);

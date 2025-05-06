@@ -62,6 +62,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('users/register', [UserController::class, 'register'])->middleware('admin');
     Route::post('users/logout', [UserController::class, 'logout']);
     Route::get('users/{user}', [UserController::class, 'show']);
+    Route::get('users/{userId}/rooms', [UserController::class, 'getUserRooms']);
     Route::put('users/{user}', [UserController::class, 'update'])->middleware('admin');
     Route::delete('users/{user}', [UserController::class, 'destroy'])->middleware('admin');
     Route::post('/users/{user}/password', [UserController::class, 'showPassword']);
@@ -72,9 +73,9 @@ Route::get('decks', [DeckController::class, 'index']);
 Route::post('decks', [DeckController::class, 'store']);
 Route::get('decks/{deck}', [DeckController::class, 'show']);
 Route::put('decks/{deck}', [DeckController::class, 'update']);
-Route::delete('decks/{deck}', [DeckController::class, 'destroy']);
+Route::delete('decks/{deck}', [DeckController::class, 'destroy'])->middleware('admin');
 Route::get('decks/{deck}/origins', [DeckController::class, 'getOrigins']);
-Route::delete('decks/{deck}/cards', [DeckController::class, 'removeAllCards']);
+Route::delete('decks/{deck}/cards', [DeckController::class, 'removeAllCards'])->middleware('admin');;
 Route::post('decks/{deck}/import-cards', [CardController::class, 'importFromExcel']);
 Route::post('decks/{deck}/generate-cards', [CardController::class, 'generate']);
 // Route::get('decks/{deck}/cards', [DeckController::class, 'showByDeck']);
@@ -86,7 +87,7 @@ Route::prefix('market-intelligence')->group(function () {
     Route::get('/deck/{deck}', [MarketIntelligenceController::class, 'forDeck']);
     Route::post('/deck/{deck}', [MarketIntelligenceController::class, 'storeOrUpdate']);
     Route::post('/deck/{deck}/generate-default', [MarketIntelligenceController::class, 'generateDefault']);
-    Route::delete('/{marketIntelligence}', [MarketIntelligenceController::class, 'destroy']);
+    Route::delete('/{marketIntelligence}', [MarketIntelligenceController::class, 'destroy'])->middleware('admin');;
 });
 
 // Admin - Card Routes
@@ -94,7 +95,7 @@ Route::get('cards', [CardController::class, 'index']);
 Route::post('cards', [CardController::class, 'store']);
 Route::get('cards/{card}', [CardController::class, 'show']);
 Route::put('cards/{card}', [CardController::class, 'update']);
-Route::delete('cards/{card}', [CardController::class, 'destroy']);
+Route::delete('cards/{card}', [CardController::class, 'destroy'])->middleware('admin');;
 
 // Admin - Container Routes
 // Route::apiResource('containers', ContainerController::class);
@@ -109,7 +110,7 @@ Route::get('containers/{container}', [ContainerController::class, 'show']);
 // Basic Room Routes
 Route::middleware('auth:sanctum')->group(function () {
     // Route::get('rooms/available-users', [RoomController::class, 'getAvailableUsers']);
-    Route::get('rooms', [RoomController::class, 'index'])->middleware('admin');
+    Route::get('rooms', [RoomController::class, 'index']);
     Route::post('rooms', [RoomController::class, 'store'])->middleware('admin');
     Route::get('rooms/{room}', [RoomController::class, 'show']);
     Route::put('rooms/{room}', [RoomController::class, 'update']);
@@ -138,6 +139,7 @@ Route::get('rooms/{roomId}/users/{userId}/bay-capacity', [RoomController::class,
 // Route::post('rooms/{room}/create-card-temporary/{user}', [RoomController::class, 'createCardTemporary'])->middleware('auth:sanctum', 'admin');
 Route::get('card-temporary/{roomId}/{userId}', [CardTemporaryController::class, 'getCardTemporaries']);
 Route::get('card-temporary/unfulfilled/{roomId}/{userId}', [CardTemporaryController::class, 'getUnfulfilledContainers']);
+Route::get('/card-temporary/all-cards/{roomId}/{deckId}', [CardTemporaryController::class, 'getAllCardTemporaries']);
 Route::post('card-temporary/accept', [CardTemporaryController::class, 'acceptCardTemporary']);
 Route::post('card-temporary/reject', [CardTemporaryController::class, 'rejectCardTemporary']);
 Route::post('card-temporary/batch', [CardTemporaryController::class, 'batchCreate']);
@@ -165,7 +167,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('ship-layouts', [ShipLayoutController::class, 'store']);
     Route::get('ship-layouts/{shipLayout}', [ShipLayoutController::class, 'show']);
     Route::put('ship-layouts/{shipLayout}', [ShipLayoutController::class, 'update']);
-    Route::delete('ship-layouts/{shipLayout}', [ShipLayoutController::class, 'destroy']);
+    Route::delete('ship-layouts/{shipLayout}', [ShipLayoutController::class, 'destroy'])->middleware('admin');;
 });
 
 // ShipDock Routes
@@ -182,10 +184,11 @@ Route::get('ship-docks/{room}/{user}', [ShipDockController::class, 'showDockByUs
 // Simulation Log Routes
 // Route::get('simulation-logs', [SimulationLogController::class, 'index'])->middleware('auth:sanctum', 'admin');
 Route::post('simulation-logs', [SimulationLogController::class, 'store'])->middleware('auth:sanctum');
-Route::get('simulation-logs/{simulationLog}', [SimulationLogController::class, 'show'])->middleware('auth:sanctum', 'admin');
-// Route::put('simulation-logs/{simulationLog}', [SimulationLogController::class, 'update'])->middleware('auth:sanctum', 'admin');
+Route::get('simulation-logs/{simulationLog}', [SimulationLogController::class, 'show'])->middleware('auth:sanctum');
+Route::get('simulation-logs/rooms/{roomId}', [SimulationLogController::class, 'getRoomLogs']);
+Route::get('simulation-logs/rooms/{roomId}/users/{userId}/', [SimulationLogController::class, 'getUserLogs']);
 Route::delete('simulation-logs/{simulationLog}', [SimulationLogController::class, 'destroy'])->middleware('auth:sanctum', 'admin');
-Route::get('simulation-logs/{roomId}/{userId}', [SimulationLogController::class, 'getByRoomAndUser']);
+// Route::put('simulation-logs/{simulationLog}', [SimulationLogController::class, 'update'])->middleware('auth:sanctum', 'admin');
 
 // Weekly Performance Routes
 Route::get('/rooms/{roomId}/weekly-performance-all/{userId}', [WeeklyPerformanceController::class, 'getAllWeeklyPerformance']);

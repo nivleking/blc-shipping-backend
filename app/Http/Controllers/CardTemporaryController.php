@@ -11,6 +11,53 @@ use Illuminate\Support\Facades\DB;
 
 class CardTemporaryController extends Controller
 {
+    /**
+     * Get all card temporaries for a room and deck
+     */
+    public function getAllCardTemporaries($roomId, $deckId)
+    {
+        $cardTemporaries = CardTemporary::select(
+            'card_temporaries.*',
+            'cards.type',
+            'cards.priority',
+            'cards.origin',
+            'cards.destination',
+            'cards.quantity',
+            'cards.revenue'
+        )
+            ->join('cards', function ($join) {
+                $join->on('cards.id', '=', 'card_temporaries.card_id')
+                    ->on('cards.deck_id', '=', 'card_temporaries.deck_id');
+            })
+            ->where('card_temporaries.room_id', $roomId)
+            ->where('card_temporaries.deck_id', $deckId)
+            ->get()
+            ->map(function ($temp) {
+                $temp->card = [
+                    'id' => $temp->card_id,
+                    'type' => $temp->type,
+                    'priority' => $temp->priority,
+                    'origin' => $temp->origin,
+                    'destination' => $temp->destination,
+                    'quantity' => $temp->quantity,
+                    'revenue' => $temp->revenue,
+                ];
+
+                unset($temp->type);
+                unset($temp->priority);
+                unset($temp->origin);
+                unset($temp->destination);
+                unset($temp->quantity);
+                unset($temp->revenue);
+
+                return $temp;
+            });
+
+        return response()->json([
+            "cards" => $cardTemporaries,
+        ]);
+    }
+
     public function acceptCardTemporary(Request $request)
     {
         $validated = $request->validate([

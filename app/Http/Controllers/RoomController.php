@@ -371,6 +371,13 @@ class RoomController extends Controller
             ], 403);
         }
 
+        if ($room->status === 'finished') {
+            return response()->json([
+                'message' => 'Simulation is already completed',
+                'simulation_completed' => true
+            ], 403);
+        }
+
         $users = json_decode($room->users, true) ?? [];
 
         // Check if user is already in the room
@@ -1362,12 +1369,20 @@ class RoomController extends Controller
         // Use processed_cards directly from shipBay instead of querying
         $processedCount = $shipBay->processed_cards;
 
+        // Get penalties from Market Intelligence
+        $penalties = $this->getPenaltiesFromMarketIntelligence($room);
+
         // If user has processed the required minimum, no penalties should be applied
         if ($processedCount >= $cardsMustProcess) {
             return [
                 'penalty' => 0,
                 'unrolled_cards' => [],
-                'rates' => $this->getPenaltiesFromMarketIntelligence($room),
+                'rates' => [
+                    'dry_committed' => $penalties['dry']['committed'],
+                    'dry_non_committed' => $penalties['dry']['non_committed'],
+                    'reefer_committed' => $penalties['reefer']['committed'],
+                    'reefer_non_committed' => $penalties['reefer']['non_committed']
+                ],
                 'container_counts' => [
                     'dry_committed' => 0,
                     'dry_non_committed' => 0,
@@ -1414,7 +1429,12 @@ class RoomController extends Controller
             return [
                 'penalty' => 0,
                 'unrolled_cards' => [],
-                'rates' => $this->getPenaltiesFromMarketIntelligence($room),
+                'rates' => [
+                    'dry_committed' => $penalties['dry']['committed'],
+                    'dry_non_committed' => $penalties['dry']['non_committed'],
+                    'reefer_committed' => $penalties['reefer']['committed'],
+                    'reefer_non_committed' => $penalties['reefer']['non_committed']
+                ],
                 'container_counts' => [
                     'dry_committed' => 0,
                     'dry_non_committed' => 0,
@@ -1424,9 +1444,6 @@ class RoomController extends Controller
                 ]
             ];
         }
-
-        // Get penalties from Market Intelligence
-        $penalties = $this->getPenaltiesFromMarketIntelligence($room);
 
         // Calculate penalty based on container type and commitment
         $totalPenalty = 0;

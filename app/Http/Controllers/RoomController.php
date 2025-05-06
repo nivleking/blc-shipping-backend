@@ -371,6 +371,13 @@ class RoomController extends Controller
             ], 403);
         }
 
+        if ($room->status === 'finished') {
+            return response()->json([
+                'message' => 'Simulation is already completed',
+                'simulation_completed' => true
+            ], 403);
+        }
+
         $users = json_decode($room->users, true) ?? [];
 
         // Check if user is already in the room

@@ -536,6 +536,10 @@ class ShipBayController extends Controller
                             'bay' => $bayIndex,
                             'row' => $rowIndex,
                             'col' => $colIndex,
+                            'type' => 'dry',
+                            'cardId' => null,
+                            'origin' => null,
+                            'destination' => null
                         ];
                         $totalContainers++;
                     }
@@ -551,7 +555,6 @@ class ShipBayController extends Controller
             ];
         }
 
-        // Get container metadata including card relationships
         $containerMetadata = DB::table('containers')
             ->select(
                 'containers.id',

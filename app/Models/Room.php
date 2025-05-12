@@ -28,6 +28,7 @@ class Room extends Model
         'bay_types',
         'total_rounds',
         'move_cost',
+        'restowage_cost',
         'dock_warehouse_costs',
         'cards_limit_per_round',
         'cards_must_process_per_round',

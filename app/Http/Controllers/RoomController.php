@@ -1373,25 +1373,25 @@ class RoomController extends Controller
         $penalties = $this->getPenaltiesFromMarketIntelligence($room);
 
         // If user has processed the required minimum, no penalties should be applied
-        if ($processedCount >= $cardsMustProcess) {
-            return [
-                'penalty' => 0,
-                'unrolled_cards' => [],
-                'rates' => [
-                    'dry_committed' => $penalties['dry']['committed'],
-                    'dry_non_committed' => $penalties['dry']['non_committed'],
-                    'reefer_committed' => $penalties['reefer']['committed'],
-                    'reefer_non_committed' => $penalties['reefer']['non_committed']
-                ],
-                'container_counts' => [
-                    'dry_committed' => 0,
-                    'dry_non_committed' => 0,
-                    'reefer_committed' => 0,
-                    'reefer_non_committed' => 0,
-                    'total' => 0
-                ]
-            ];
-        }
+        // if ($processedCount >= $cardsMustProcess) {
+        //     return [
+        //         'penalty' => 0,
+        //         'unrolled_cards' => [],
+        //         'rates' => [
+        //             'dry_committed' => $penalties['dry']['committed'],
+        //             'dry_non_committed' => $penalties['dry']['non_committed'],
+        //             'reefer_committed' => $penalties['reefer']['committed'],
+        //             'reefer_non_committed' => $penalties['reefer']['non_committed']
+        //         ],
+        //         'container_counts' => [
+        //             'dry_committed' => 0,
+        //             'dry_non_committed' => 0,
+        //             'reefer_committed' => 0,
+        //             'reefer_non_committed' => 0,
+        //             'total' => 0
+        //         ]
+        //     ];
+        // }
 
         // Find cards that were selected but not processed (neither accepted nor rejected)
         $unprocessedCards = CardTemporary::join('cards', function ($join) {
@@ -2202,7 +2202,7 @@ class RoomController extends Controller
                 $revenue = $this->calculateRevenueByDistance($userPort, $destinationPort, $containerType);
 
                 // Create card with random priority
-                $priority = rand(1, 10) <= 5 ? "Committed" : "Non-Committed";
+                $priority = "Non-Committed";
 
                 // Generate a unique card ID
                 $cardId = $roomPrefix . $counter;

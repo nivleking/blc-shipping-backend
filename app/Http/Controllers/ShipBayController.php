@@ -189,7 +189,7 @@ class ShipBayController extends Controller
                 ],
 
                 // Container data
-                'containers' => $containers,
+                // 'containers' => $containers,
 
                 // Ship dock data
                 'ship_dock' => $shipDock ? [

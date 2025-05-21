@@ -45,15 +45,15 @@ class ShipBayController extends Controller
 
             // 4. Get all containers
             // Get cards to know which cards are relevant for this room
-            $cardsByRoomId = Card::where('deck_id', $room->deck_id);
+            // $cardsByRoomId = Card::where('deck_id', $room->deck_id);
 
-            // Get the relevant card IDs from the cards
-            $relevantCardIds = $cardsByRoomId->pluck('id')->toArray();
+            // // Get the relevant card IDs from the cards
+            // $relevantCardIds = $cardsByRoomId->pluck('id')->toArray();
 
-            // Get all containers for these cards, filtered by deck_id
-            $containers = Container::whereIn('card_id', $relevantCardIds)
-                ->where('deck_id', $room->deck_id)
-                ->get();
+            // // Get all containers for these cards, filtered by deck_id
+            // $containers = Container::whereIn('card_id', $relevantCardIds)
+            //     ->where('deck_id', $room->deck_id)
+            //     ->get();
 
             // 5. Get ship dock data
             $shipDock = ShipDock::where('user_id', $userId)
@@ -189,7 +189,7 @@ class ShipBayController extends Controller
                 ],
 
                 // Container data
-                'containers' => $containers,
+                // 'containers' => $containers,
 
                 // Ship dock data
                 'ship_dock' => $shipDock ? [

@@ -19,6 +19,7 @@ use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Redis;
 
 class RoomController extends Controller
 {
@@ -175,6 +176,9 @@ class RoomController extends Controller
                             // 'extra_moves_on_long_crane' => $bay->extra_moves_on_long_crane,
                         ]);
                     }
+
+                    $cacheKey = "containers:room:{$room->id}";
+                    Redis::del($cacheKey);
                 }
             } else if ($request->status === 'active') {
                 // Create ship docks for all users in the room
@@ -346,6 +350,10 @@ class RoomController extends Controller
             $room->delete();
 
             DB::commit();
+
+            // 7. Clear Redis cache for the room containers
+            $cacheKey = "containers:room:{$room->id}";
+            Redis::del($cacheKey);
 
             return response()->json([
                 'message' => 'Room and all associated data deleted successfully'

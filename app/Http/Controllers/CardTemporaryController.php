@@ -180,7 +180,10 @@ class CardTemporaryController extends Controller
             ->orderByRaw('card_temporaries.is_backlog DESC')
             ->orderByRaw("CASE WHEN cards.priority = 'Committed' THEN 1 ELSE 2 END")
             ->orderByRaw("LENGTH(card_temporaries.card_id) ASC") // Sort by card ID length first
+            // THIS IS FOR PRODUCTION
             ->orderByRaw("REGEXP_REPLACE(card_temporaries.card_id, '^(\\d)(\\d+)(\\d{2})$', '\\1\\2') + 0") // Then by port+week
+            // THIS IS FOR LOCAL
+            // ->orderByRaw("SUBSTRING_INDEX(card_temporaries.card_id, RIGHT(card_temporaries.card_id, 2), 1) + 0") // Then by port+week
             ->orderByRaw("RIGHT(card_temporaries.card_id, 2) + 0") // Then by card number
             ->get();
 

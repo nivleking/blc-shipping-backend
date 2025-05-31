@@ -241,15 +241,18 @@ class RoomController extends Controller
             'total_rounds' => 'integer|min:1',
             'cards_limit_per_round' => 'integer|min:1',
             'cards_must_process_per_round' => 'integer|min:1',
+            'restowage_cost' => 'integer|min:1',
             'move_cost' => 'integer|min:1',
             'assigned_users' => 'array',
             'assigned_users.*' => 'exists:users,id',
             'deck' => 'exists:decks,id',
             'ship_layout' => 'exists:ship_layouts,id',
+            'dock_warehouse_costs' => 'array',
             'dock_warehouse_costs.dry.committed' => 'integer|min:0',
             'dock_warehouse_costs.dry.non_committed' => 'integer|min:0',
             'dock_warehouse_costs.reefer.committed' => 'integer|min:0',
             'dock_warehouse_costs.reefer.non_committed' => 'integer|min:0',
+            'swap_config' => 'array',
             // 'extra_moves_cost' => 'integer|min:1',
             // 'ideal_crane_split' => 'integer|min:1',
         ]);
@@ -262,6 +265,7 @@ class RoomController extends Controller
         if (isset($validated['cards_limit_per_round'])) $room->cards_limit_per_round = $validated['cards_limit_per_round'];
         if (isset($validated['cards_must_process_per_round'])) $room->cards_must_process_per_round = $validated['cards_must_process_per_round'];
         if (isset($validated['move_cost'])) $room->move_cost = $validated['move_cost'];
+        if (isset($validated['restowage_cost'])) $room->restowage_cost = $validated['restowage_cost'];
 
         if (isset($validated['assigned_users'])) {
             $room->assigned_users = json_encode($validated['assigned_users']);
@@ -279,37 +283,41 @@ class RoomController extends Controller
             $room->bay_types = json_encode($layout->bay_types);
         }
 
-        $dockWarehouseCostsUpdated = isset($validated['dock_warehouse_costs.dry.committed']) ||
+        $dockWarehouseCostsUpdated = isset($validated['dock_warehouse_costs']) ||
+            isset($validated['dock_warehouse_costs.dry.committed']) ||
             isset($validated['dock_warehouse_costs.dry.non_committed']) ||
             isset($validated['dock_warehouse_costs.reefer.committed']) ||
             isset($validated['dock_warehouse_costs.reefer.non_committed']);
 
         if ($dockWarehouseCostsUpdated) {
-            // Get current costs
-            $currentCosts = $room->dock_warehouse_costs;
+            if (isset($validated['dock_warehouse_costs'])) {
+                $room->dock_warehouse_costs = $validated['dock_warehouse_costs'];
+            } else {
+                $currentCosts = $room->dock_warehouse_costs;
 
-            // Update the values that were provided
-            if (isset($validated['dock_warehouse_costs.dry.committed'])) {
-                $currentCosts['dry']['committed'] = $validated['dock_warehouse_costs.dry.committed'];
-            }
-            if (isset($validated['dock_warehouse_costs.dry.non_committed'])) {
-                $currentCosts['dry']['non_committed'] = $validated['dock_warehouse_costs.dry.non_committed'];
-            }
-            if (isset($validated['dock_warehouse_costs.reefer.committed'])) {
-                $currentCosts['reefer']['committed'] = $validated['dock_warehouse_costs.reefer.committed'];
-            }
-            if (isset($validated['dock_warehouse_costs.reefer.non_committed'])) {
-                $currentCosts['reefer']['non_committed'] = $validated['dock_warehouse_costs.reefer.non_committed'];
-            }
+                if (isset($validated['dock_warehouse_costs.dry.committed'])) {
+                    $currentCosts['dry']['committed'] = $validated['dock_warehouse_costs.dry.committed'];
+                }
+                if (isset($validated['dock_warehouse_costs.dry.non_committed'])) {
+                    $currentCosts['dry']['non_committed'] = $validated['dock_warehouse_costs.dry.non_committed'];
+                }
+                if (isset($validated['dock_warehouse_costs.reefer.committed'])) {
+                    $currentCosts['reefer']['committed'] = $validated['dock_warehouse_costs.reefer.committed'];
+                }
+                if (isset($validated['dock_warehouse_costs.reefer.non_committed'])) {
+                    $currentCosts['reefer']['non_committed'] = $validated['dock_warehouse_costs.reefer.non_committed'];
+                }
 
-            // Recalculate default as average
-            $currentCosts['default'] = intval(($currentCosts['dry']['committed'] +
-                $currentCosts['dry']['non_committed'] +
-                $currentCosts['reefer']['committed'] +
-                $currentCosts['reefer']['non_committed']) / 4);
+                $currentCosts['default'] = intval(($currentCosts['dry']['committed'] +
+                    $currentCosts['dry']['non_committed'] +
+                    $currentCosts['reefer']['committed'] +
+                    $currentCosts['reefer']['non_committed']) / 4);
 
-            $room->dock_warehouse_costs = $currentCosts;
+                $room->dock_warehouse_costs = $currentCosts;
+            }
         }
+
+        if (isset($validated['swap_config'])) $room->swap_config = json_encode($validated['swap_config']);
 
         $room->save();
 

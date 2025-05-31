@@ -61,6 +61,7 @@ class RoomController extends Controller
             'ship_layout' => 'required|exists:ship_layouts,id',
             'total_rounds' => 'required|integer|min:1',
             'move_cost' => 'required|integer|min:1',
+            'restowage_cost' => 'required|integer|min:1',
             'cards_limit_per_round' => 'required|integer|min:1',
             'cards_must_process_per_round' => 'required|integer|min:1',
             'swap_config' => 'required|nullable|array',
@@ -106,6 +107,7 @@ class RoomController extends Controller
                 'bay_types' => json_encode($layout->bay_types),
                 'total_rounds' => $validated['total_rounds'],
                 'move_cost' => $validated['move_cost'],
+                'restowage_cost' => $validated['restowage_cost'],
                 'cards_limit_per_round' => $validated['cards_limit_per_round'],
                 'cards_must_process_per_round' => $validated['cards_must_process_per_round'],
                 'swap_config' => json_encode($validated['swap_config'] ?? []),
@@ -115,7 +117,7 @@ class RoomController extends Controller
             ]);
 
             return response()->json($room, 200);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             return response()->json([
                 'message' => 'Failed to create room',
                 'error' => $e->getMessage()
@@ -221,7 +223,7 @@ class RoomController extends Controller
                     }
 
                     DB::commit();
-                } catch (\Exception $e) {
+                } catch (Exception $e) {
                     DB::rollBack();
                     return response()->json([
                         'message' => 'Failed to create ship docks',
@@ -2017,7 +2019,7 @@ class RoomController extends Controller
                 ],
                 200
             );
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             DB::rollBack();
             return response()->json([
                 'message' => 'Failed to set ports and assign cards',
@@ -2264,7 +2266,7 @@ class RoomController extends Controller
                     ];
 
                     $flatArena['totalContainers']++;
-                } catch (\Exception $e) {
+                } catch (Exception $e) {
                     continue;
                 }
             }
@@ -2446,7 +2448,7 @@ class RoomController extends Controller
             });
 
             return response()->json($rankings);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             return response()->json(['error' => 'Failed to retrieve rankings'], 500);
         }
     }

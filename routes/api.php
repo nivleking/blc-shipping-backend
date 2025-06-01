@@ -119,7 +119,7 @@ Route::delete('/market-intelligence/{marketIntelligence}', [MarketIntelligenceCo
 Route::middleware(['auth:sanctum', 'room.access'])->group(function () {
     // Container Routes
     Route::get('/rooms/{roomId}/containers', [ContainerController::class, 'getContainersByRoom']);
-    Route::get('/containers/{container}', [ContainerController::class, 'show']);
+    Route::get('/rooms/{roomId}/containers/{container}', [ContainerController::class, 'show']);
 
     // Room-specific Routes
     Route::post('/rooms/{room}/join', [RoomController::class, 'joinRoom'])->middleware('auth:sanctum', 'user');

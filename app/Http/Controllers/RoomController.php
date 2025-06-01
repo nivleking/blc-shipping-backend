@@ -12,6 +12,7 @@ use App\Models\MarketIntelligence;
 use App\Models\ShipBay;
 use App\Models\ShipDock;
 use App\Models\ShipLayout;
+use App\Models\SimulationLog;
 use App\Models\User;
 use App\Models\WeeklyPerformance;
 use App\Utilities\UtilitiesHelper;
@@ -178,9 +179,6 @@ class RoomController extends Controller
                             // 'extra_moves_on_long_crane' => $bay->extra_moves_on_long_crane,
                         ]);
                     }
-
-                    $cacheKey = "containers:room:{$room->id}";
-                    Redis::del($cacheKey);
                 }
             } else if ($request->status === 'active') {
                 // Create ship docks for all users in the room
@@ -212,7 +210,7 @@ class RoomController extends Controller
                         }
 
                         // Create or update the ship dock
-                        ShipDock::updateOrCreate(
+                        $shipDock = ShipDock::updateOrCreate(
                             ['user_id' => $userId, 'room_id' => $room->id],
                             [
                                 'arena' => json_encode($dockLayout),
@@ -220,6 +218,19 @@ class RoomController extends Controller
                                 'port' => $shipBay->port
                             ]
                         );
+
+                        SimulationLog::create([
+                            'user_id' => $userId,
+                            'room_id' => $room->id,
+                            'arena_bay' => $shipBay->arena,
+                            'arena_dock' => $shipDock->arena,
+                            'port' => $shipBay->port,
+                            'section' => $shipBay->section,
+                            'round' => $shipBay->current_round,
+                            'revenue' => $shipBay->revenue ?? 0,
+                            'penalty' => $shipBay->penalty ?? 0,
+                            'total_revenue' => $shipBay->total_revenue,
+                        ]);
                     }
 
                     DB::commit();
@@ -234,6 +245,10 @@ class RoomController extends Controller
 
             $room->status = $request->status;
             $room->save();
+
+            $cacheKey = "containers:room:{$room->id}";
+            Redis::del($cacheKey);
+
             return response()->json($room);
         }
 

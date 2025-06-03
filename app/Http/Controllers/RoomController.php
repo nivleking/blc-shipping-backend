@@ -179,6 +179,23 @@ class RoomController extends Controller
                             // 'extra_moves_on_long_crane' => $bay->extra_moves_on_long_crane,
                         ]);
                     }
+
+                    $shipDock = ShipDock::where('room_id', $room->id)
+                        ->where('user_id', $bay->user_id)
+                        ->first();
+
+                    SimulationLog::create([
+                        'user_id' => $bay->user_id,
+                        'room_id' => $room->id,
+                        'arena_bay' => $bay->arena,
+                        'arena_dock' => $shipDock->arena,
+                        'port' => $bay->port,
+                        'section' => $bay->section,
+                        'round' => $bay->current_round,
+                        'revenue' => $bay->revenue ?? 0,
+                        'penalty' => $bay->penalty ?? 0,
+                        'total_revenue' => $bay->total_revenue,
+                    ]);
                 }
             } else if ($request->status === 'active') {
                 // Create ship docks for all users in the room
@@ -875,6 +892,19 @@ class RoomController extends Controller
 
             $shipBay->save();
             $this->finalizeWeeklyPerformance($room, $userId, $shipBay->current_round);
+
+            SimulationLog::create([
+                'user_id' => $userId,
+                'room_id' => $room->id,
+                'arena_bay' => $shipBay->arena,
+                'arena_dock' => $shipDock->arena,
+                'port' => $shipBay->port,
+                'section' => $shipBay->section,
+                'round' => $shipBay->current_round,
+                'revenue' => $shipBay->revenue ?? 0,
+                'penalty' => $shipBay->penalty ?? 0,
+                'total_revenue' => $shipBay->total_revenue,
+            ]);
         }
 
         // Get the swap configuration

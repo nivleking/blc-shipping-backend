@@ -599,20 +599,86 @@ class ShipBayController extends Controller
     public function updateSection(Request $request, $roomId, $userId)
     {
         $validatedData = $request->validate([
-            'section' => 'required|string|in:section1,section2'
+            'section' => 'required|in:section1,section2',
         ]);
 
         $shipBay = ShipBay::where('room_id', $roomId)
             ->where('user_id', $userId)
             ->first();
 
+        $room = Room::find($roomId);
+
         if (!$shipBay) {
-            return response()->json(['message' => 'Ship bay not found'], 404);
+            return response()->json(['error' => 'Ship bay not found'], 404);
         }
 
-        $shipBay->update(['section' => $validatedData['section']]);
+        // If trying to progress from section1 to section2, validate all containers are discharged
+        if (($shipBay->section === 'section1' && $validatedData['section'] === 'section2')) {
+            // Get the current port
+            $currentPort = $shipBay->port;
 
-        return response()->json($shipBay);
+            // Extract container IDs from the bay arena
+            $containerIds = [];
+            $arena = json_decode($shipBay->arena, true);
+
+            if (isset($arena['containers']) && is_array($arena['containers'])) {
+                // New flat format
+                foreach ($arena['containers'] as $container) {
+                    $containerIds[] = $container['id'];
+                }
+            } elseif (is_array($arena)) {
+                // Legacy 2D array format
+                foreach ($arena as $bay) {
+                    if (is_array($bay)) {
+                        foreach ($bay as $row) {
+                            if (is_array($row)) {
+                                foreach ($row as $cellContainerId) {
+                                    if ($cellContainerId) {
+                                        $containerIds[] = $cellContainerId;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (count($containerIds) > 0) {
+                // Get containers and their destinations
+                $containerData = Container::whereIn('id', $containerIds)
+                    ->with(['card:id,destination'])
+                    ->get();
+
+                // Check if any container has the current port as destination
+                $containersForCurrentPort = $containerData->filter(function ($container) use ($currentPort) {
+                    return $container->card &&
+                        $container->card->destination &&
+                        strtoupper(trim($container->card->destination)) === strtoupper(trim($currentPort));
+                });
+
+                if ($containersForCurrentPort->count() > 0) {
+                    return response()->json([
+                        'error' => 'Please discharge all containers destined for your port first!',
+                        'remaining_containers' => $containersForCurrentPort->count(),
+                        'container_ids' => $containersForCurrentPort->pluck('id')->toArray()
+                    ], 400);
+                }
+            }
+        }
+        // else if (($shipBay->current_round > $room->total_rounds)) {
+        //     return response()->json([
+        //         'error' => 'You cannot change section after the last round has ended.'
+        //     ], 400);
+        // }
+
+        // If validation passes or not needed, update the section
+        $shipBay->section = $validatedData['section'];
+        $shipBay->save();
+
+        return response()->json([
+            'message' => 'Section updated successfully',
+            'section' => $shipBay->section
+        ], 200);
     }
 
     public function show($roomId, $userId)

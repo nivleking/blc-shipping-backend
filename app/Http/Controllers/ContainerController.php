@@ -29,12 +29,13 @@ class ContainerController extends Controller
     /**
      * Display the specified resource.
      */
-    public function show(Container $container)
+    public function show($roomId, $container)
     {
-        // return $container->load(['card:id,destination,type,quantity']);
+        $containerModel = Container::findOrFail($container);
+
         return response()->json([
-            'container' => $container,
-            'card' => $container->card
+            'container' => $containerModel,
+            'card' => $containerModel->card
         ]);
     }
 

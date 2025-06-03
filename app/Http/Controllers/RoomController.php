@@ -12,6 +12,7 @@ use App\Models\MarketIntelligence;
 use App\Models\ShipBay;
 use App\Models\ShipDock;
 use App\Models\ShipLayout;
+use App\Models\SimulationLog;
 use App\Models\User;
 use App\Models\WeeklyPerformance;
 use App\Utilities\UtilitiesHelper;
@@ -61,6 +62,7 @@ class RoomController extends Controller
             'ship_layout' => 'required|exists:ship_layouts,id',
             'total_rounds' => 'required|integer|min:1',
             'move_cost' => 'required|integer|min:1',
+            'restowage_cost' => 'required|integer|min:1',
             'cards_limit_per_round' => 'required|integer|min:1',
             'cards_must_process_per_round' => 'required|integer|min:1',
             'swap_config' => 'required|nullable|array',
@@ -106,6 +108,7 @@ class RoomController extends Controller
                 'bay_types' => json_encode($layout->bay_types),
                 'total_rounds' => $validated['total_rounds'],
                 'move_cost' => $validated['move_cost'],
+                'restowage_cost' => $validated['restowage_cost'],
                 'cards_limit_per_round' => $validated['cards_limit_per_round'],
                 'cards_must_process_per_round' => $validated['cards_must_process_per_round'],
                 'swap_config' => json_encode($validated['swap_config'] ?? []),
@@ -115,7 +118,7 @@ class RoomController extends Controller
             ]);
 
             return response()->json($room, 200);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             return response()->json([
                 'message' => 'Failed to create room',
                 'error' => $e->getMessage()
@@ -177,8 +180,22 @@ class RoomController extends Controller
                         ]);
                     }
 
-                    $cacheKey = "containers:room:{$room->id}";
-                    Redis::del($cacheKey);
+                    $shipDock = ShipDock::where('room_id', $room->id)
+                        ->where('user_id', $bay->user_id)
+                        ->first();
+
+                    SimulationLog::create([
+                        'user_id' => $bay->user_id,
+                        'room_id' => $room->id,
+                        'arena_bay' => $bay->arena,
+                        'arena_dock' => $shipDock->arena,
+                        'port' => $bay->port,
+                        'section' => $bay->section,
+                        'round' => $bay->current_round,
+                        'revenue' => $bay->revenue ?? 0,
+                        'penalty' => $bay->penalty ?? 0,
+                        'total_revenue' => $bay->total_revenue,
+                    ]);
                 }
             } else if ($request->status === 'active') {
                 // Create ship docks for all users in the room
@@ -210,7 +227,7 @@ class RoomController extends Controller
                         }
 
                         // Create or update the ship dock
-                        ShipDock::updateOrCreate(
+                        $shipDock = ShipDock::updateOrCreate(
                             ['user_id' => $userId, 'room_id' => $room->id],
                             [
                                 'arena' => json_encode($dockLayout),
@@ -218,10 +235,23 @@ class RoomController extends Controller
                                 'port' => $shipBay->port
                             ]
                         );
+
+                        SimulationLog::create([
+                            'user_id' => $userId,
+                            'room_id' => $room->id,
+                            'arena_bay' => $shipBay->arena,
+                            'arena_dock' => $shipDock->arena,
+                            'port' => $shipBay->port,
+                            'section' => $shipBay->section,
+                            'round' => $shipBay->current_round,
+                            'revenue' => $shipBay->revenue ?? 0,
+                            'penalty' => $shipBay->penalty ?? 0,
+                            'total_revenue' => $shipBay->total_revenue,
+                        ]);
                     }
 
                     DB::commit();
-                } catch (\Exception $e) {
+                } catch (Exception $e) {
                     DB::rollBack();
                     return response()->json([
                         'message' => 'Failed to create ship docks',
@@ -232,6 +262,10 @@ class RoomController extends Controller
 
             $room->status = $request->status;
             $room->save();
+
+            $cacheKey = "containers:room:{$room->id}";
+            Redis::del($cacheKey);
+
             return response()->json($room);
         }
 
@@ -241,15 +275,18 @@ class RoomController extends Controller
             'total_rounds' => 'integer|min:1',
             'cards_limit_per_round' => 'integer|min:1',
             'cards_must_process_per_round' => 'integer|min:1',
+            'restowage_cost' => 'integer|min:1',
             'move_cost' => 'integer|min:1',
             'assigned_users' => 'array',
             'assigned_users.*' => 'exists:users,id',
             'deck' => 'exists:decks,id',
             'ship_layout' => 'exists:ship_layouts,id',
+            'dock_warehouse_costs' => 'array',
             'dock_warehouse_costs.dry.committed' => 'integer|min:0',
             'dock_warehouse_costs.dry.non_committed' => 'integer|min:0',
             'dock_warehouse_costs.reefer.committed' => 'integer|min:0',
             'dock_warehouse_costs.reefer.non_committed' => 'integer|min:0',
+            'swap_config' => 'array',
             // 'extra_moves_cost' => 'integer|min:1',
             // 'ideal_crane_split' => 'integer|min:1',
         ]);
@@ -262,6 +299,7 @@ class RoomController extends Controller
         if (isset($validated['cards_limit_per_round'])) $room->cards_limit_per_round = $validated['cards_limit_per_round'];
         if (isset($validated['cards_must_process_per_round'])) $room->cards_must_process_per_round = $validated['cards_must_process_per_round'];
         if (isset($validated['move_cost'])) $room->move_cost = $validated['move_cost'];
+        if (isset($validated['restowage_cost'])) $room->restowage_cost = $validated['restowage_cost'];
 
         if (isset($validated['assigned_users'])) {
             $room->assigned_users = json_encode($validated['assigned_users']);
@@ -279,37 +317,41 @@ class RoomController extends Controller
             $room->bay_types = json_encode($layout->bay_types);
         }
 
-        $dockWarehouseCostsUpdated = isset($validated['dock_warehouse_costs.dry.committed']) ||
+        $dockWarehouseCostsUpdated = isset($validated['dock_warehouse_costs']) ||
+            isset($validated['dock_warehouse_costs.dry.committed']) ||
             isset($validated['dock_warehouse_costs.dry.non_committed']) ||
             isset($validated['dock_warehouse_costs.reefer.committed']) ||
             isset($validated['dock_warehouse_costs.reefer.non_committed']);
 
         if ($dockWarehouseCostsUpdated) {
-            // Get current costs
-            $currentCosts = $room->dock_warehouse_costs;
+            if (isset($validated['dock_warehouse_costs'])) {
+                $room->dock_warehouse_costs = $validated['dock_warehouse_costs'];
+            } else {
+                $currentCosts = $room->dock_warehouse_costs;
 
-            // Update the values that were provided
-            if (isset($validated['dock_warehouse_costs.dry.committed'])) {
-                $currentCosts['dry']['committed'] = $validated['dock_warehouse_costs.dry.committed'];
-            }
-            if (isset($validated['dock_warehouse_costs.dry.non_committed'])) {
-                $currentCosts['dry']['non_committed'] = $validated['dock_warehouse_costs.dry.non_committed'];
-            }
-            if (isset($validated['dock_warehouse_costs.reefer.committed'])) {
-                $currentCosts['reefer']['committed'] = $validated['dock_warehouse_costs.reefer.committed'];
-            }
-            if (isset($validated['dock_warehouse_costs.reefer.non_committed'])) {
-                $currentCosts['reefer']['non_committed'] = $validated['dock_warehouse_costs.reefer.non_committed'];
-            }
+                if (isset($validated['dock_warehouse_costs.dry.committed'])) {
+                    $currentCosts['dry']['committed'] = $validated['dock_warehouse_costs.dry.committed'];
+                }
+                if (isset($validated['dock_warehouse_costs.dry.non_committed'])) {
+                    $currentCosts['dry']['non_committed'] = $validated['dock_warehouse_costs.dry.non_committed'];
+                }
+                if (isset($validated['dock_warehouse_costs.reefer.committed'])) {
+                    $currentCosts['reefer']['committed'] = $validated['dock_warehouse_costs.reefer.committed'];
+                }
+                if (isset($validated['dock_warehouse_costs.reefer.non_committed'])) {
+                    $currentCosts['reefer']['non_committed'] = $validated['dock_warehouse_costs.reefer.non_committed'];
+                }
 
-            // Recalculate default as average
-            $currentCosts['default'] = intval(($currentCosts['dry']['committed'] +
-                $currentCosts['dry']['non_committed'] +
-                $currentCosts['reefer']['committed'] +
-                $currentCosts['reefer']['non_committed']) / 4);
+                $currentCosts['default'] = intval(($currentCosts['dry']['committed'] +
+                    $currentCosts['dry']['non_committed'] +
+                    $currentCosts['reefer']['committed'] +
+                    $currentCosts['reefer']['non_committed']) / 4);
 
-            $room->dock_warehouse_costs = $currentCosts;
+                $room->dock_warehouse_costs = $currentCosts;
+            }
         }
+
+        if (isset($validated['swap_config'])) $room->swap_config = json_encode($validated['swap_config']);
 
         $room->save();
 
@@ -850,6 +892,19 @@ class RoomController extends Controller
 
             $shipBay->save();
             $this->finalizeWeeklyPerformance($room, $userId, $shipBay->current_round);
+
+            SimulationLog::create([
+                'user_id' => $userId,
+                'room_id' => $room->id,
+                'arena_bay' => $shipBay->arena,
+                'arena_dock' => $shipDock->arena,
+                'port' => $shipBay->port,
+                'section' => $shipBay->section,
+                'round' => $shipBay->current_round,
+                'revenue' => $shipBay->revenue ?? 0,
+                'penalty' => $shipBay->penalty ?? 0,
+                'total_revenue' => $shipBay->total_revenue,
+            ]);
         }
 
         // Get the swap configuration
@@ -2009,7 +2064,7 @@ class RoomController extends Controller
                 ],
                 200
             );
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             DB::rollBack();
             return response()->json([
                 'message' => 'Failed to set ports and assign cards',
@@ -2256,7 +2311,7 @@ class RoomController extends Controller
                     ];
 
                     $flatArena['totalContainers']++;
-                } catch (\Exception $e) {
+                } catch (Exception $e) {
                     continue;
                 }
             }
@@ -2438,7 +2493,7 @@ class RoomController extends Controller
             });
 
             return response()->json($rankings);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             return response()->json(['error' => 'Failed to retrieve rankings'], 500);
         }
     }

@@ -59,6 +59,7 @@ class Kernel extends HttpKernel
         'ability' => \Laravel\Sanctum\Http\Middleware\CheckForAnyAbility::class,
         'user' => \App\Http\Middleware\UserMiddleware::class,
         'room.access' => \App\Http\Middleware\RoomAccessMiddleware::class,
+        'user.ownership' => \App\Http\Middleware\UserOwnershipMiddleware::class,
         'auth.basic' => \Illuminate\Auth\Middleware\AuthenticateWithBasicAuth::class,
         'auth.session' => \Illuminate\Session\Middleware\AuthenticateSession::class,
         'cache.headers' => \Illuminate\Http\Middleware\SetCacheHeaders::class,

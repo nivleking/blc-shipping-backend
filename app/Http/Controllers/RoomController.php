@@ -2455,7 +2455,7 @@ class RoomController extends Controller
             'status' => 'selected',
         ]);
 
-        return response()->json($cardTemporary, 201);
+        return response()->json($cardTemporary, 200);
     }
 
     public function getUsersRanking($roomId)

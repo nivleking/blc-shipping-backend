@@ -31,7 +31,7 @@ class SimulationLogController extends Controller
 
         $simulationLog = SimulationLog::create($validated);
 
-        return response()->json($simulationLog, 201);
+        return response()->json($simulationLog, 200);
     }
 
     /**

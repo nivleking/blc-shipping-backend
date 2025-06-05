@@ -112,7 +112,7 @@ class MarketIntelligenceController extends Controller
         return response()->json([
             'message' => "Market intelligence {$action} successfully",
             'data' => $marketIntelligence
-        ], $action === 'created' ? 201 : 200);
+        ], 200);
     }
 
     /**
@@ -147,6 +147,6 @@ class MarketIntelligenceController extends Controller
             'penalties' => $penalties
         ]);
 
-        return response()->json($marketIntelligence, 201);
+        return response()->json($marketIntelligence, 200);
     }
 }

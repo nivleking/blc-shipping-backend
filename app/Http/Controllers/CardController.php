@@ -60,7 +60,7 @@ class CardController extends Controller
             ]);
         }
 
-        return response()->json($card->load('containers'), 201);
+        return response()->json($card->load('containers'), 200);
     }
 
     public function show(Card $card)
@@ -345,7 +345,7 @@ class CardController extends Controller
             $response = $this->store($cardRequest);
         }
 
-        return response()->json($deck->load('cards'), 201);
+        return response()->json($deck->load('cards'), 200);
     }
 
     private function randomGaussian()
@@ -483,7 +483,7 @@ class CardController extends Controller
             return response()->json([
                 'message' => 'Successfully imported ' . count($createdCards) . ' cards to deck',
                 'cards' => $createdCards
-            ], 201);
+            ], 200);
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([

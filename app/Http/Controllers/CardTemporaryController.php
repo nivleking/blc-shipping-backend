@@ -333,7 +333,7 @@ class CardTemporaryController extends Controller
             return response()->json([
                 'message' => count($cardTemporaries) . ' card temporaries created successfully',
                 'card_temporaries' => $cardTemporaries
-            ], 201);
+            ], 200);
         } catch (\Exception $e) {
             DB::rollBack();
 
@@ -436,7 +436,7 @@ class CardTemporaryController extends Controller
             return response()->json([
                 'message' => 'Card temporaries created successfully for all users',
                 'results' => $results
-            ], 201);
+            ], 200);
         } catch (\Exception $e) {
             DB::rollBack();
 

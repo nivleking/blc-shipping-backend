@@ -54,7 +54,7 @@ class DeckController extends Controller
 
         $this->createDefaultMarketIntelligence($deck);
 
-        return response()->json($deck, 201);
+        return response()->json($deck, 200);
     }
 
     private function createDefaultMarketIntelligence(Deck $deck)

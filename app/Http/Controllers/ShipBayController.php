@@ -364,13 +364,13 @@ class ShipBayController extends Controller
                 'shipBay' => $shipBay,
                 'moveTracking' => $moveResponse->original,
                 'rankings' => $rankings->original,
-            ], 201);
+            ], 200);
         }
 
         return response()->json([
             'shipBay' => $shipBay,
             'rankings' => $rankings->original,
-        ], 201);
+        ], 200);
     }
 
     /**

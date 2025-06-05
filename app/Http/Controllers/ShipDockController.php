@@ -37,7 +37,7 @@ class ShipDockController extends Controller
 
         $this->logSimulationState($validatedData['user_id'], $validatedData['room_id'], $shipDock);
 
-        return response()->json(['message' => 'Ship dock saved successfully', 'shipDock' => $shipDock], 201);
+        return response()->json(['message' => 'Ship dock saved successfully', 'shipDock' => $shipDock], 200);
     }
 
     /**

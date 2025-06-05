@@ -57,7 +57,7 @@ class UserController extends Controller
 
         $user = User::create($validated);
 
-        return response()->json($user->load(['creator', 'editor']), 201);
+        return response()->json($user->load(['creator', 'editor']), 200);
     }
 
     public function refreshToken(Request $request)

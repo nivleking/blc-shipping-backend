@@ -101,7 +101,6 @@ Route::middleware(['auth:sanctum', 'admin'])->group(function () {
 
 // Simulation Log Routes
 Route::get('/simulation-logs/rooms/{roomId}/users/{userId}/', [SimulationLogController::class, 'getUserLogs'])->middleware('auth:sanctum', 'user.ownership');
-Route::get('/simulation-logs/rooms/{roomId}', [SimulationLogController::class, 'getRoomLogs'])->middleware('auth:sanctum');
 
 // Market Intelligence Routes
 Route::get('/market-intelligence/deck/{deck}', [MarketIntelligenceController::class, 'forDeck'])->middleware('auth:sanctum');

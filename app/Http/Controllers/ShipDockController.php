@@ -7,9 +7,17 @@ use App\Models\ShipBay;
 use App\Models\ShipDock;
 use App\Models\SimulationLog;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\App;
 
 class ShipDockController extends Controller
 {
+    protected $simulationLogController;
+
+    public function __construct(SimulationLogController $simulationLogController)
+    {
+        $this->simulationLogController = $simulationLogController;
+    }
+
     public function index()
     {
         //
@@ -35,24 +43,18 @@ class ShipDockController extends Controller
             ]
         );
 
-        $this->logSimulationState($validatedData['user_id'], $validatedData['room_id'], $shipDock);
+        $shipBay = ShipBay::where('user_id', $validatedData['user_id'])
+            ->where('room_id', $validatedData['room_id'])
+            ->first();
 
-        return response()->json(['message' => 'Ship dock saved successfully', 'shipDock' => $shipDock], 200);
-    }
-
-    /**
-     * Log simulation state after ship dock update
-     */
-    private function logSimulationState($userId, $roomId, $shipDock)
-    {
-        $shipBay = ShipBay::where('user_id', $userId)
-            ->where('room_id', $roomId)
+        $shipDock = ShipDock::where('user_id', $validatedData['user_id'])
+            ->where('room_id', $validatedData['room_id'])
             ->first();
 
         if ($shipBay) {
             $logData = [
-                'user_id' => $userId,
-                'room_id' => $roomId,
+                'user_id' => $validatedData['user_id'],
+                'room_id' => $validatedData['room_id'],
                 'arena_bay' => $shipBay->arena,
                 'arena_dock' => $shipDock->arena,
                 'port' => $shipBay->port,
@@ -63,8 +65,10 @@ class ShipDockController extends Controller
                 'total_revenue' => $shipBay->total_revenue,
             ];
 
-            SimulationLog::create($logData);
+            $this->simulationLogController->createLogEntry($logData);
         }
+
+        return response()->json(['message' => 'Ship dock saved successfully', 'shipDock' => $shipDock], 200);
     }
 
     /**

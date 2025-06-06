@@ -2,6 +2,7 @@
 
 namespace App\Utilities;
 
+use App\Models\SimulationLog;
 use Illuminate\Support\Facades\Redis;
 use Exception;
 
@@ -30,37 +31,6 @@ class RedisService
     }
 
     /**
-     * Mendapatkan data dari cache atau fetch dari callback jika tidak ada
-     *
-     * @param string $key Key cache
-     * @param callable $callback Fungsi untuk mengambil data jika tidak ada di cache
-     * @param int|null $ttl TTL cache dalam detik (null menggunakan default)
-     * @return mixed Data dari cache atau hasil fetch
-     */
-    public function remember(string $key, callable $callback, ?int $ttl = null): mixed
-    {
-        try {
-            // Coba ambil dari cache dulu
-            if (Redis::exists($key)) {
-                $cachedData = Redis::get($key);
-                return json_decode($cachedData, true);
-            }
-
-            // Cache miss - execute callback untuk mendapatkan data baru
-            $freshData = $callback();
-
-            // Simpan di cache dengan TTL
-            $ttlValue = $ttl ?? $this->defaultTtl;
-            Redis::setex($key, $ttlValue, json_encode($freshData));
-
-            return $freshData;
-        } catch (Exception $e) {
-            // Jika Redis gagal, log error dan kembalikan data baru
-            return $callback();
-        }
-    }
-
-    /**
      * Simpan data di cache
      *
      * @param string $key Key cache
@@ -73,9 +43,6 @@ class RedisService
         try {
             $ttlValue = $ttl ?? $this->defaultTtl;
             $result = Redis::setex($key, $ttlValue, json_encode($data));
-
-            // Check if the operation was successful
-            // Predis returns a Status object with value "OK" on success
             return $result && (string)$result === 'OK';
         } catch (Exception $e) {
             return false;
@@ -93,7 +60,8 @@ class RedisService
     {
         try {
             if (Redis::exists($key)) {
-                return json_decode(Redis::get($key), true);
+                $cachedData = Redis::get($key);
+                return json_decode($cachedData, true);
             }
             return $default;
         } catch (Exception $e) {
@@ -118,26 +86,6 @@ class RedisService
     }
 
     /**
-     * Hapus beberapa key berdasarkan pattern
-     *
-     * @param string $pattern Pattern key yang cocok (misal: "logs:*")
-     * @return int Jumlah key yang dihapus
-     */
-    public function deletePattern(string $pattern): int
-    {
-        try {
-            $keys = Redis::keys($pattern);
-            if (empty($keys)) {
-                return 0;
-            }
-
-            return Redis::del($keys);
-        } catch (Exception $e) {
-            return 0;
-        }
-    }
-
-    /**
      * Cek apakah key ada di cache
      *
      * @param string $key Key cache
@@ -150,6 +98,102 @@ class RedisService
             return is_numeric($result) ? $result > 0 : (bool)$result;
         } catch (Exception $e) {
             return false;
+        }
+    }
+
+    /**
+     * Hapus data dari cache berdasarkan pola key.
+     * PERHATIAN: Penggunaan Redis::keys() bisa berdampak pada performa pada dataset besar.
+     *
+     * @param string $pattern Pola key (misal: "user:*:info")
+     * @return int Jumlah key yang dihapus
+     */
+    public function deleteByPattern(string $pattern): bool
+    {
+        try {
+            $prefix = "blc_shipping_database_";
+
+            // Add the prefix to the pattern
+            $patternWithPrefix = $prefix . $pattern;
+
+            $keysWithPrefix = Redis::keys($patternWithPrefix);
+
+            if (count($keysWithPrefix) > 0) {
+                $result = Redis::del($keysWithPrefix);
+                return is_numeric($result) ? $result > 0 : (bool)$result;
+            }
+            return false; // Tidak ada key yang cocok dengan pola
+        } catch (Exception $e) {
+            return false;
+        }
+    }
+
+    /**
+     * Hapus semua cache keys yang terkait dengan sebuah room.
+     *
+     * @param string $roomId ID room yang cache-nya akan dihapus.
+     * @return void
+     */
+    public function deleteAllRoomCacheKeys(string $roomId): void
+    {
+        // 1. Cache untuk containers
+        $containerCacheKey = $this->generateKey('containers', ['room' => $roomId]);
+        $this->delete($containerCacheKey);
+
+        // 2. Cache for simulation logs - manual deletion
+        $this->deleteAllSimulationLogCaches($roomId);
+    }
+
+    /**
+     * Hapus semua simulation log cache keys untuk room tertentu.
+     * Pendekatan manual untuk menghindari penggunaan pattern matching.
+     *
+     * @param string $roomId ID room yang cache-nya akan dihapus.
+     * @return int Jumlah key yang berhasil dihapus
+     */
+    private function deleteAllSimulationLogCaches(string $roomId): int
+    {
+        try {
+            // Get all relevant data from the database
+            $simulationLogs = SimulationLog::where('room_id', $roomId)
+                ->select('user_id', 'section', 'round')
+                ->distinct()
+                ->get();
+
+            $deletedCount = 0;
+
+            foreach ($simulationLogs as $log) {
+                // Get user ID from the log
+                $userId = $log->user_id;
+
+                // Delete room+user+section=all+round=all
+                $key = "simulation_logs:room:{$roomId}:user:{$userId}:section:all:round:all";
+                if ($this->delete($key)) {
+                    $deletedCount++;
+                }
+
+                // Delete room+user+specific section+round=all
+                $key = "simulation_logs:room:{$roomId}:user:{$userId}:section:{$log->section}:round:all";
+                if ($this->delete($key)) {
+                    $deletedCount++;
+                }
+
+                // Delete room+user+section=all+specific round
+                $key = "simulation_logs:room:{$roomId}:user:{$userId}:section:all:round:{$log->round}";
+                if ($this->delete($key)) {
+                    $deletedCount++;
+                }
+
+                // Delete room+user+specific section+specific round
+                $key = "simulation_logs:room:{$roomId}:user:{$userId}:section:{$log->section}:round:{$log->round}";
+                if ($this->delete($key)) {
+                    $deletedCount++;
+                }
+            }
+
+            return $deletedCount;
+        } catch (\Exception $e) {
+            return 0;
         }
     }
 }

@@ -16,6 +16,15 @@ use Illuminate\Support\Facades\DB;
 
 class ShipBayController extends Controller
 {
+    protected $simulationLogController;
+    protected $roomController;
+
+    public function __construct(SimulationLogController $simulationLogController, RoomController $roomController)
+    {
+        $this->roomController = $roomController;
+        $this->simulationLogController = $simulationLogController;
+    }
+
     /**
      * Get consolidated arena data in a single API call
      */
@@ -61,11 +70,10 @@ class ShipBayController extends Controller
                 ->first();
 
             // 6. Get restowage status
-            $roomController = new RoomController();
-            $restowageResponse = $roomController->calculateRestowagePenalties($room, $userId);
+            $restowageResponse = $this->roomController->calculateRestowagePenalties($room, $userId);
 
             // 7. Get bay capacity status
-            $bayCapacityResponse = $roomController->getBayCapacityStatus($roomId, $userId);
+            $bayCapacityResponse = $this->roomController->getBayCapacityStatus($roomId, $userId);
             $isBayFull = $bayCapacityResponse->original['is_full'] ?? false;
 
             // 8. Get unfulfilled containers
@@ -315,32 +323,8 @@ class ShipBayController extends Controller
             }
         }
 
-        if (isset($validatedData['isLog']) && $validatedData['isLog'] === true) {
-            // Get the ship dock data
-            $shipDock = ShipDock::where('user_id', $validatedData['user_id'])
-                ->where('room_id', $validatedData['room_id'])
-                ->first();
-
-            if ($shipDock) {
-                // Create simulation log
-                SimulationLog::create([
-                    'user_id' => $validatedData['user_id'],
-                    'room_id' => $validatedData['room_id'],
-                    'arena_bay' => $shipBay->arena,
-                    'arena_dock' => $shipDock->arena,
-                    'port' => $shipBay->port,
-                    'section' => $shipBay->section,
-                    'round' => $shipBay->current_round,
-                    'revenue' => $shipBay->revenue ?? 0,
-                    'penalty' => $shipBay->penalty ?? 0,
-                    'total_revenue' => $shipBay->total_revenue,
-                ]);
-            }
-        }
-
         // Calculate rankings
-        $roomController = new RoomController();
-        $rankings = $roomController->getUsersRanking($validatedData['room_id']);
+        $rankings = $this->roomController->getUsersRanking($validatedData['room_id']);
 
         if (
             isset($validatedData['move_type']) &&
@@ -359,12 +343,70 @@ class ShipBayController extends Controller
             // Call incrementMoves method directly
             $moveResponse = $this->incrementMoves($moveTrackingRequest, $validatedData['room_id'], $validatedData['user_id']);
 
+            if (isset($validatedData['isLog']) && $validatedData['isLog'] === true) {
+                // Get the ship dock data
+                $shipBay = ShipBay::where('user_id', $validatedData['user_id'])
+                    ->where('room_id', $validatedData['room_id'])
+                    ->first();
+
+                $shipDock = ShipDock::where('user_id', $validatedData['user_id'])
+                    ->where('room_id', $validatedData['room_id'])
+                    ->first();
+
+                if ($shipDock) {
+                    // Create simulation log
+                    $logData = [
+                        'user_id' => $validatedData['user_id'],
+                        'room_id' => $validatedData['room_id'],
+                        'arena_bay' => $shipBay->arena,
+                        'arena_dock' => $shipDock->arena,
+                        'port' => $shipBay->port,
+                        'section' => $shipBay->section,
+                        'round' => $shipBay->current_round,
+                        'revenue' => $shipBay->revenue ?? 0,
+                        'penalty' => $shipBay->penalty ?? 0,
+                        'total_revenue' => $shipBay->total_revenue ?? 0,
+                    ];
+
+                    $this->simulationLogController->createLogEntry($logData);
+                }
+            }
+
             // Add move tracking data to response
             return response()->json([
                 'shipBay' => $shipBay,
                 'moveTracking' => $moveResponse->original,
                 'rankings' => $rankings->original,
             ], 200);
+        }
+
+        if (isset($validatedData['isLog']) && $validatedData['isLog'] === true) {
+            // Get the ship dock data
+            $shipBay = ShipBay::where('user_id', $validatedData['user_id'])
+                ->where('room_id', $validatedData['room_id'])
+                ->first();
+
+            $shipDock = ShipDock::where('user_id', $validatedData['user_id'])
+                ->where('room_id', $validatedData['room_id'])
+                ->first();
+
+            if ($shipDock) {
+                // Create simulation log
+                $logData = [
+                    'user_id' => $validatedData['user_id'],
+                    'room_id' => $validatedData['room_id'],
+                    'arena_bay' => $shipBay->arena,
+                    'arena_dock' => $shipDock->arena,
+                    'port' => $shipBay->port,
+                    'section' => $shipBay->section,
+                    'round' => $shipBay->current_round,
+                    'revenue' => $shipBay->revenue ?? 0,
+                    'penalty' => $shipBay->penalty ?? 0,
+                    'total_revenue' => $shipBay->total_revenue ?? 0,
+                ];
+
+                $this->simulationLogController->createLogEntry($logData);
+            }
         }
 
         return response()->json([
@@ -744,10 +786,9 @@ class ShipBayController extends Controller
         }
 
         $room = Room::find($roomId);
-        $roomController = new RoomController();
 
         // ======= PHASE 1: CAPTURE COMPLETE PREVIOUS STATE =======
-        $previousRestowageData = $roomController->calculateRestowagePenalties($room, $userId);
+        $previousRestowageData = $this->roomController->calculateRestowagePenalties($room, $userId);
         $previousBayMoves = json_decode($shipBay->bay_moves ?? '{}', true);
 
         $previousContainerPositions = [];
@@ -869,7 +910,7 @@ class ShipBayController extends Controller
         }
 
         // HITUNG RESTOWAGE BARU BERDASARKAN ARENA TERKINI =======
-        $newRestowageData = $roomController->calculateRestowagePenalties($room, $userId);
+        $newRestowageData = $this->roomController->calculateRestowagePenalties($room, $userId);
 
         $currentRestowageBays = [];
         $currentBlockingContainers = [];
@@ -1117,18 +1158,28 @@ class ShipBayController extends Controller
 
         // After all operations are complete, create a simulation log
         if ($validatedData['card_action'] === 'accept') {
-            SimulationLog::create([
+            $shipDock = ShipDock::where('user_id', $userId)
+                ->where('room_id', $roomId)
+                ->first();
+
+            $shipBay = ShipBay::where('room_id', $roomId)
+                ->where('user_id', $userId)
+                ->first();
+
+            $logData = [
                 'user_id' => $userId,
                 'room_id' => $roomId,
                 'arena_bay' => $shipBay->arena,
-                'arena_dock' => $shipDock->arena,
+                'arena_dock' => $shipDock->arena ?? null,
                 'port' => $shipBay->port,
                 'section' => $shipBay->section,
                 'round' => $shipBay->current_round,
                 'revenue' => $shipBay->revenue ?? 0,
                 'penalty' => $shipBay->penalty ?? 0,
                 'total_revenue' => $shipBay->total_revenue,
-            ]);
+            ];
+
+            $this->simulationLogController->createLogEntry($logData);
         }
 
         return response()->json([

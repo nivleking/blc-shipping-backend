@@ -88,13 +88,11 @@ class ContainerController extends Controller
 
     public function getContainersByRoom(Request $request, $roomId)
     {
-        $useCache = true;
-
-        if ($request) {
-            $useCache = $request->query('useCache');
-            if ($useCache !== null) {
-                $useCache = filter_var($useCache, FILTER_VALIDATE_BOOLEAN);
-            }
+        $useCache = $request->query('useCache');
+        if ($useCache !== null) {
+            $useCache = filter_var($useCache, FILTER_VALIDATE_BOOLEAN);
+        } else {
+            $useCache = true;
         }
 
         $cacheKey = $this->redisService->generateKey('containers', ['room' => $roomId]);

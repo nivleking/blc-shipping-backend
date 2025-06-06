@@ -33,7 +33,7 @@ class ShipLayoutController extends Controller
                 'created_by' => $request->user()->id
             ]);
 
-            return response()->json($layout, 201);
+            return response()->json($layout, 200);
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Failed to create layout',

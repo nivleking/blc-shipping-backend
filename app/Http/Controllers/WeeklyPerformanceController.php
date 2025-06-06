@@ -12,6 +12,18 @@ use Illuminate\Http\Request;
 
 class WeeklyPerformanceController extends Controller
 {
+    protected $roomController;
+    protected $shipBayController;
+
+    /**
+     * Constructor with proper dependency injection
+     */
+    public function __construct(RoomController $roomController, ShipBayController $shipBayController)
+    {
+        $this->roomController = $roomController;
+        $this->shipBayController = $shipBayController;
+    }
+
     /**
      * Get financial summary including estimated penalties
      */
@@ -38,7 +50,7 @@ class WeeklyPerformanceController extends Controller
             ->first();
 
         // Get the controller instance to calculate penalties
-        $roomController = new RoomController();
+        $roomController = $this->roomController;
 
         // Calculate unrolled penalties
         $unrolledPenaltyData = $roomController->calculateUnrolledPenalties($room, $userId, $shipBay, $shipBay->current_round);
@@ -144,11 +156,11 @@ class WeeklyPerformanceController extends Controller
             ->first();
 
         // Get financial summary from ShipBayController for consistent data
-        $shipBayController = new ShipBayController();
+        $shipBayController = $this->shipBayController;
         $financialSummary = null;
 
         if ($shipBay) {
-            $financialSummaryResponse = $shipBayController->getFinancialSummary($roomId, $userId);
+            $financialSummaryResponse = $this->getFinancialSummary($roomId, $userId);
             $financialSummary = json_decode($financialSummaryResponse->getContent(), true);
         }
 

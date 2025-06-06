@@ -15,9 +15,11 @@ use App\Models\ShipLayout;
 use App\Models\SimulationLog;
 use App\Models\User;
 use App\Models\WeeklyPerformance;
+use App\Utilities\RedisService;
 use App\Utilities\UtilitiesHelper;
 use Exception;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Redis;
@@ -25,6 +27,15 @@ use Illuminate\Support\Facades\Redis;
 class RoomController extends Controller
 {
     use UtilitiesHelper;
+
+    protected $simulationLogController;
+    protected $redisService;
+
+    public function __construct(SimulationLogController $simulationLogController, RedisService $redisService)
+    {
+        $this->simulationLogController = $simulationLogController;
+        $this->redisService = $redisService;
+    }
 
     public function index()
     {
@@ -184,7 +195,7 @@ class RoomController extends Controller
                         ->where('user_id', $bay->user_id)
                         ->first();
 
-                    SimulationLog::create([
+                    $logData = [
                         'user_id' => $bay->user_id,
                         'room_id' => $room->id,
                         'arena_bay' => $bay->arena,
@@ -195,7 +206,9 @@ class RoomController extends Controller
                         'revenue' => $bay->revenue ?? 0,
                         'penalty' => $bay->penalty ?? 0,
                         'total_revenue' => $bay->total_revenue,
-                    ]);
+                    ];
+
+                    $this->simulationLogController->createLogEntry($logData);
                 }
             } else if ($request->status === 'active') {
                 // Create ship docks for all users in the room
@@ -236,7 +249,7 @@ class RoomController extends Controller
                             ]
                         );
 
-                        SimulationLog::create([
+                        $logData = [
                             'user_id' => $userId,
                             'room_id' => $room->id,
                             'arena_bay' => $shipBay->arena,
@@ -247,7 +260,9 @@ class RoomController extends Controller
                             'revenue' => $shipBay->revenue ?? 0,
                             'penalty' => $shipBay->penalty ?? 0,
                             'total_revenue' => $shipBay->total_revenue,
-                        ]);
+                        ];
+
+                        $this->simulationLogController->createLogEntry($logData);
                     }
 
                     DB::commit();
@@ -360,7 +375,15 @@ class RoomController extends Controller
 
     public function destroy(Request $request, Room $room)
     {
+        if ($room->status === 'active') {
+            return response()->json([
+                'message' => 'Cannot delete an active room'
+            ], 403);
+        }
+
         try {
+            $this->redisService->deleteAllRoomCacheKeys($room->id);
+
             DB::beginTransaction();
 
             // 1. Find and delete card temporaries for this room
@@ -392,10 +415,6 @@ class RoomController extends Controller
             $room->delete();
 
             DB::commit();
-
-            // 7. Clear Redis cache for the room containers
-            $cacheKey = "containers:room:{$room->id}";
-            Redis::del($cacheKey);
 
             return response()->json([
                 'message' => 'Room and all associated data deleted successfully'
@@ -892,19 +911,6 @@ class RoomController extends Controller
 
             $shipBay->save();
             $this->finalizeWeeklyPerformance($room, $userId, $shipBay->current_round);
-
-            SimulationLog::create([
-                'user_id' => $userId,
-                'room_id' => $room->id,
-                'arena_bay' => $shipBay->arena,
-                'arena_dock' => $shipDock->arena,
-                'port' => $shipBay->port,
-                'section' => $shipBay->section,
-                'round' => $shipBay->current_round,
-                'revenue' => $shipBay->revenue ?? 0,
-                'penalty' => $shipBay->penalty ?? 0,
-                'total_revenue' => $shipBay->total_revenue,
-            ]);
         }
 
         // Get the swap configuration
@@ -1180,6 +1186,10 @@ class RoomController extends Controller
                 ->where('user_id', $userId)
                 ->first();
 
+            $shipDock = ShipDock::where('room_id', $room->id)
+                ->where('user_id', $userId)
+                ->first();
+
             // Create capacity uptake for new round
             CapacityUptake::updateOrCreate(
                 [
@@ -1230,6 +1240,21 @@ class RoomController extends Controller
                     'reefer_containers_loaded' => 0
                 ]
             );
+
+            $logData = [
+                'user_id' => $userId,
+                'room_id' => $room->id,
+                'arena_bay' => $shipBay->arena,
+                'arena_dock' => $shipDock->arena,
+                'port' => $shipBay->port,
+                'section' => $shipBay->section,
+                'round' => $shipBay->current_round,
+                'revenue' => $shipBay->revenue ?? 0,
+                'penalty' => $shipBay->penalty ?? 0,
+                'total_revenue' => $shipBay->total_revenue,
+            ];
+
+            $this->simulationLogController->createLogEntry($logData);
         }
 
         return response()->json([
@@ -1435,8 +1460,17 @@ class RoomController extends Controller
         // Get penalties from Market Intelligence
         $penalties = $this->getPenaltiesFromMarketIntelligence($room);
 
+        $capacityUptake = CapacityUptake::where('room_id', $room->id)
+            ->where('user_id', $userId)
+            ->where('week', $currentRound)
+            ->first();
+
+        $rejectedCards = is_array($capacityUptake->rejected_cards) ?
+            $capacityUptake->rejected_cards :
+            json_decode($capacityUptake->rejected_cards ?? '[]', true);
+
         // If user has processed the required minimum, no penalties should be applied
-        if ($processedCount >= $cardsMustProcess) {
+        if ($processedCount >= $cardsMustProcess && count($rejectedCards) === 0) {
             return [
                 'penalty' => 0,
                 'unrolled_cards' => [],
@@ -2455,7 +2489,7 @@ class RoomController extends Controller
             'status' => 'selected',
         ]);
 
-        return response()->json($cardTemporary, 201);
+        return response()->json($cardTemporary, 200);
     }
 
     public function getUsersRanking($roomId)

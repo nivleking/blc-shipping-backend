@@ -2,6 +2,7 @@
 
 namespace App\Utilities;
 
+use App\Models\CapacityUptake;
 use App\Models\SimulationLog;
 use Illuminate\Support\Facades\Redis;
 use Exception;
@@ -166,6 +167,9 @@ class RedisService
 
         // 2. Cache for simulation logs - manual deletion
         $this->deleteAllSimulationLogCaches($roomId);
+
+        // 3. Cache for capacity uptake - manual deletion
+        $this->deleteAllCapacityUptakeCaches($roomId);
     }
 
     /**
@@ -211,6 +215,62 @@ class RedisService
                 // Delete room+user+specific section+specific round
                 $key = "simulation_logs:room:{$roomId}:user:{$userId}:section:{$log->section}:round:{$log->round}";
                 if ($this->delete($key)) {
+                    $deletedCount++;
+                }
+            }
+
+            return $deletedCount;
+        } catch (\Exception $e) {
+            return 0;
+        }
+    }
+
+    /**
+     * Delete all capacity uptake cache keys for a specific room.
+     * 
+     * @param string $roomId ID of the room whose cache should be deleted.
+     * @return int Number of keys successfully deleted
+     */
+    public function deleteAllCapacityUptakeCaches(string $roomId): int
+    {
+        try {
+            // Get all capacity uptake records for this room to find all key combinations
+            $capacityUptakes = CapacityUptake::where('room_id', $roomId)
+                ->select('user_id', 'week')
+                ->distinct()
+                ->get();
+
+            $deletedCount = 0;
+
+            // Delete general room-level cache key if it exists
+            $roomLevelKey = $this->generateKey('capacity_uptake', ['room' => $roomId]);
+            if ($this->delete($roomLevelKey)) {
+                $deletedCount++;
+            }
+
+            // Process each unique user+week combination
+            foreach ($capacityUptakes as $uptake) {
+                $userId = $uptake->user_id;
+                $week = $uptake->week;
+
+                // Delete specific user+week cache key
+                $key = $this->generateKey('capacity_uptake', [
+                    'room' => $roomId,
+                    'user' => $userId,
+                    'week' => $week
+                ]);
+
+                if ($this->delete($key)) {
+                    $deletedCount++;
+                }
+
+                // Also try deleting without week (current week queries)
+                $keyNoWeek = $this->generateKey('capacity_uptake', [
+                    'room' => $roomId,
+                    'user' => $userId
+                ]);
+
+                if ($this->delete($keyNoWeek)) {
                     $deletedCount++;
                 }
             }

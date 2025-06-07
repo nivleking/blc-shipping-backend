@@ -99,7 +99,7 @@ class ContainerController extends Controller
 
         try {
             if ($useCache && $this->redisService->has($cacheKey)) {
-                $cachedData = $this->redisService->get($cacheKey);
+                $cachedData = $this->redisService->get($cacheKey, null, false);
                 return response()->json($cachedData, 200);
             }
 
@@ -111,7 +111,7 @@ class ContainerController extends Controller
             $containers = Container::where('deck_id', $room->deck_id)->get();
 
             if ($useCache) {
-                $this->redisService->set($cacheKey, $containers, 3600);
+                $this->redisService->set($cacheKey, $containers, 3600, false);
             }
 
             return response()->json($containers, 200);

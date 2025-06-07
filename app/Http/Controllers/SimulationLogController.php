@@ -174,7 +174,7 @@ class SimulationLogController extends Controller
             // Try to get from cache if enabled
             if ($useCache && $this->redisService->has($cacheKey)) {
                 return response()->json(
-                    $this->redisService->get($cacheKey),
+                    $this->redisService->get($cacheKey, null, true),
                     200
                 );
             }
@@ -231,7 +231,7 @@ class SimulationLogController extends Controller
 
             // Store in cache if enabled (with shorter TTL for user-specific data)
             if ($useCache) {
-                $this->redisService->set($cacheKey, $responseData, 1800); // 30 minutes
+                $this->redisService->set($cacheKey, $responseData, 1800, true); // 30 minutes
             }
 
             return response()->json($responseData, 200);

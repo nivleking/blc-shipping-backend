@@ -14,7 +14,10 @@ class RedisService
      */
     protected $defaultTtl = 3600;
 
-    protected $encodingFormat = 'msgpack';
+    /**
+     * Default encoding format, can be overridden per method call
+     */
+    protected $defaultEncodingFormat = 'json';
 
     /**
      * Generate key cache yang terstandarisasi
@@ -33,24 +36,37 @@ class RedisService
     }
 
     /**
-     * Simpan data di cache menggunakan MessagePack jika tersedia
+     * Simpan data di cache dengan format yang dapat ditentukan
+     *
+     * @param string $key Key untuk menyimpan data
+     * @param mixed $data Data yang akan disimpan
+     * @param int|null $ttl TTL dalam detik
+     * @param bool|null $useGzip Gunakan Gzip compression
+     * @return bool Berhasil atau tidak
      */
-    public function set(string $key, mixed $data, ?int $ttl = null): bool
+    public function set(string $key, mixed $data, ?int $ttl = null, ?bool $useGzip = null): bool
     {
         try {
             $ttlValue = $ttl ?? $this->defaultTtl;
 
-            // Gunakan MessagePack jika ekstensi tersedia
-            if ($this->encodingFormat === 'msgpack' && extension_loaded('msgpack')) {
-                // Tambahkan metadata format untuk menandai bahwa ini MessagePack
-                $wrappedData = [
-                    'format' => 'msgpack',
-                    'data' => $data
-                ];
-                $serialized = msgpack_pack($wrappedData);
+            // JSON encode the data first
+            $jsonData = json_encode($data);
+            if ($jsonData === false) {
+                // Handle JSON encoding failure
+                return false;
+            }
+
+            if ($useGzip === true) {
+                // Add a prefix to identify Gzip compressed data
+                if (function_exists('gzencode')) {
+                    $serialized = 'GZ:' . gzencode($jsonData, 6); // Level 6 is a good balance
+                } else {
+                    // Fall back to JSON if gzencode is not available
+                    $serialized = 'JS:' . $jsonData;
+                }
             } else {
-                // Fallback ke JSON
-                $serialized = json_encode($data);
+                // Add a prefix to identify JSON data
+                $serialized = 'JS:' . $jsonData;
             }
 
             $result = Redis::setex($key, $ttlValue, $serialized);
@@ -62,28 +78,40 @@ class RedisService
 
     /**
      * Ambil data dari cache dengan deteksi format otomatis
+     *
+     * @param string $key Key untuk mengambil data
+     * @param mixed $default Nilai default jika key tidak ada
+     * @param bool|null $useGzip Gunakan Gzip decompression
+     * @return mixed Data yang diambil
      */
-    public function get(string $key, mixed $default = null): mixed
+    public function get(string $key, mixed $default = null, ?bool $useGzip = null): mixed
     {
         try {
             if (Redis::exists($key)) {
                 $cachedData = Redis::get($key);
 
-                // Coba unpack sebagai MessagePack
-                if ($this->encodingFormat === 'msgpack' && extension_loaded('msgpack')) {
-                    try {
-                        $unpacked = msgpack_unpack($cachedData);
-
-                        // Cek apakah ini format yang kita buat dengan metadata
-                        if (is_array($unpacked) && isset($unpacked['format']) && $unpacked['format'] === 'msgpack') {
-                            return $unpacked['data'];
+                // Check for format prefix
+                if (substr($cachedData, 0, 3) === 'GZ:') {
+                    // This is Gzip compressed data
+                    if (function_exists('gzdecode')) {
+                        try {
+                            $decompressed = gzdecode(substr($cachedData, 3));
+                            if ($decompressed === false) {
+                                return $default;
+                            }
+                            return json_decode($decompressed, true);
+                        } catch (Exception $e) {
+                            // Fall through to default if decompression fails
                         }
-                    } catch (Exception $e) {
-                        // Jika gagal unpack, mungkin ini JSON
                     }
+                } else if (substr($cachedData, 0, 3) === 'JS:') {
+                    // This is JSON data
+                    return json_decode(substr($cachedData, 3), true);
+                } else if (substr($cachedData, 0, 3) === 'MP:') {
+                    return $default;
                 }
 
-                // Fallback ke JSON
+                // Legacy data with no prefix - assume it's JSON
                 return json_decode($cachedData, true);
             }
             return $default;

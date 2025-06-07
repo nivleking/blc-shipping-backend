@@ -14,6 +14,8 @@ class RedisService
      */
     protected $defaultTtl = 3600;
 
+    protected $encodingFormat = 'msgpack';
+
     /**
      * Generate key cache yang terstandarisasi
      *
@@ -31,18 +33,27 @@ class RedisService
     }
 
     /**
-     * Simpan data di cache
-     *
-     * @param string $key Key cache
-     * @param mixed $data Data yang akan disimpan
-     * @param int|null $ttl TTL dalam detik (null menggunakan default)
-     * @return bool Berhasil atau tidak
+     * Simpan data di cache menggunakan MessagePack jika tersedia
      */
     public function set(string $key, mixed $data, ?int $ttl = null): bool
     {
         try {
             $ttlValue = $ttl ?? $this->defaultTtl;
-            $result = Redis::setex($key, $ttlValue, json_encode($data));
+
+            // Gunakan MessagePack jika ekstensi tersedia
+            if ($this->encodingFormat === 'msgpack' && extension_loaded('msgpack')) {
+                // Tambahkan metadata format untuk menandai bahwa ini MessagePack
+                $wrappedData = [
+                    'format' => 'msgpack',
+                    'data' => $data
+                ];
+                $serialized = msgpack_pack($wrappedData);
+            } else {
+                // Fallback ke JSON
+                $serialized = json_encode($data);
+            }
+
+            $result = Redis::setex($key, $ttlValue, $serialized);
             return $result && (string)$result === 'OK';
         } catch (Exception $e) {
             return false;
@@ -50,17 +61,29 @@ class RedisService
     }
 
     /**
-     * Ambil data dari cache
-     *
-     * @param string $key Key cache
-     * @param mixed $default Nilai default jika key tidak ditemukan
-     * @return mixed Data dari cache atau default
+     * Ambil data dari cache dengan deteksi format otomatis
      */
     public function get(string $key, mixed $default = null): mixed
     {
         try {
             if (Redis::exists($key)) {
                 $cachedData = Redis::get($key);
+
+                // Coba unpack sebagai MessagePack
+                if ($this->encodingFormat === 'msgpack' && extension_loaded('msgpack')) {
+                    try {
+                        $unpacked = msgpack_unpack($cachedData);
+
+                        // Cek apakah ini format yang kita buat dengan metadata
+                        if (is_array($unpacked) && isset($unpacked['format']) && $unpacked['format'] === 'msgpack') {
+                            return $unpacked['data'];
+                        }
+                    } catch (Exception $e) {
+                        // Jika gagal unpack, mungkin ini JSON
+                    }
+                }
+
+                // Fallback ke JSON
                 return json_decode($cachedData, true);
             }
             return $default;
@@ -96,33 +119,6 @@ class RedisService
         try {
             $result = Redis::exists($key);
             return is_numeric($result) ? $result > 0 : (bool)$result;
-        } catch (Exception $e) {
-            return false;
-        }
-    }
-
-    /**
-     * Hapus data dari cache berdasarkan pola key.
-     * PERHATIAN: Penggunaan Redis::keys() bisa berdampak pada performa pada dataset besar.
-     *
-     * @param string $pattern Pola key (misal: "user:*:info")
-     * @return int Jumlah key yang dihapus
-     */
-    public function deleteByPattern(string $pattern): bool
-    {
-        try {
-            $prefix = "blc_shipping_database_";
-
-            // Add the prefix to the pattern
-            $patternWithPrefix = $prefix . $pattern;
-
-            $keysWithPrefix = Redis::keys($patternWithPrefix);
-
-            if (count($keysWithPrefix) > 0) {
-                $result = Redis::del($keysWithPrefix);
-                return is_numeric($result) ? $result > 0 : (bool)$result;
-            }
-            return false; // Tidak ada key yang cocok dengan pola
         } catch (Exception $e) {
             return false;
         }

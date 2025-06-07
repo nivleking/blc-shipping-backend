@@ -10,16 +10,47 @@ use App\Models\CardTemporary;
 use App\Models\Container;
 use App\Models\Room;
 use App\Models\ShipBay;
+use App\Utilities\RedisService;
 use Illuminate\Http\Request;
 
 class CapacityUptakeController extends Controller
 {
+
+    protected $redisService;
+
+    public function __construct(RedisService $redisService)
+    {
+        $this->redisService = $redisService;
+    }
+
     /**
      * Display capacity uptake data
      */
     public function getCapacityUptake($roomId, $userId, $week = null)
     {
+        $useCache = request()->query('useCache');
+        if ($useCache !== null) {
+            $useCache = filter_var($useCache, FILTER_VALIDATE_BOOLEAN);
+        } else {
+            $useCache = false;
+        }
+
         if ($week) {
+            // Generate a cache key for this specific request
+            $cacheKey = $this->redisService->generateKey('capacity_uptake', [
+                'room' => $roomId,
+                'user' => $userId,
+                'week' => $week
+            ]);
+
+            // Try to get from cache if enabled
+            if ($useCache && $this->redisService->has($cacheKey)) {
+                return response()->json([
+                    'data' => $this->redisService->get($cacheKey, null, true),
+                    'source' => 'redis'
+                ], 200);
+            }
+
             $capacityUptake = CapacityUptake::where('room_id', $roomId)
                 ->where('user_id', $userId)
                 ->where('week', $week)
@@ -38,7 +69,17 @@ class CapacityUptakeController extends Controller
         }
         // Get the room to access swap_config
         $room = Room::find($roomId);
-        $swapConfig = $room ? json_decode($room->swap_config, true) : [];
+        $swapConfig = [];
+        if ($room) {
+            if (is_string($room->swap_config)) {
+                $decoded = json_decode($room->swap_config, true);
+                if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                    $swapConfig = $decoded;
+                }
+            } elseif (is_array($room->swap_config)) {
+                $swapConfig = $room->swap_config;
+            }
+        }
 
         // Get the ship bay to access arena
         $shipBay = ShipBay::where('room_id', $roomId)
@@ -135,9 +176,29 @@ class CapacityUptakeController extends Controller
         }
         $capacityUptake->swap_config = $swapConfig;
 
+        $cardTemporaries = CardTemporary::where([
+            'room_id' => $roomId,
+            'user_id' => $userId,
+            'status' => 'accepted',
+        ])
+            ->whereNotNull('unfulfilled_containers')
+            ->where('unfulfilled_containers', '!=', '[]')
+            ->get();
+
+        $unfulfilledContainers = [];
+        foreach ($cardTemporaries as $card) {
+            $unfulfilledContainers[$card->card_id] = $card->unfulfilled_containers;
+        }
+
+        if ($useCache) {
+            $this->redisService->set($cacheKey, $responseData, 3600, true);
+        }
+
         return response()->json([
             'message' => 'Capacity uptake data retrieved successfully',
             'data' => $responseData,
+            'unfulfilled_containers' => $unfulfilledContainers,
+            'source' => 'database'
         ], 200);
     }
 

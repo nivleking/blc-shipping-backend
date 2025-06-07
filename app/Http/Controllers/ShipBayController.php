@@ -17,12 +17,14 @@ use Illuminate\Support\Facades\DB;
 class ShipBayController extends Controller
 {
     protected $simulationLogController;
+    protected $capacityUptakeController;
     protected $roomController;
 
-    public function __construct(SimulationLogController $simulationLogController, RoomController $roomController)
+    public function __construct(SimulationLogController $simulationLogController, CapacityUptakeController $capacityUptakeController, RoomController $roomController)
     {
-        $this->roomController = $roomController;
         $this->simulationLogController = $simulationLogController;
+        $this->capacityUptakeController = $capacityUptakeController;
+        $this->roomController = $roomController;
     }
 
     /**
@@ -1114,7 +1116,7 @@ class ShipBayController extends Controller
         // Handle capacity uptake if data provided
         $capacityUptakeData = null;
         if ($request->has('card') && $request->has('port')) {
-            $capacityUptakeController = new CapacityUptakeController();
+            $capacityUptakeController = $this->capacityUptakeController;
             $capacityUptakeData = $capacityUptakeController->updateCapacityUptake($request, $roomId, $userId, $shipBay->current_round);
         }
 

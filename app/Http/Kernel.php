@@ -60,6 +60,7 @@ class Kernel extends HttpKernel
         'user' => \App\Http\Middleware\UserMiddleware::class,
         'room.access' => \App\Http\Middleware\RoomAccessMiddleware::class,
         'user.ownership' => \App\Http\Middleware\UserOwnershipMiddleware::class,
+        'single.session' => \App\Http\Middleware\SingleSessionMiddleware::class,
         'auth.basic' => \Illuminate\Auth\Middleware\AuthenticateWithBasicAuth::class,
         'auth.session' => \Illuminate\Session\Middleware\AuthenticateSession::class,
         'cache.headers' => \Illuminate\Http\Middleware\SetCacheHeaders::class,

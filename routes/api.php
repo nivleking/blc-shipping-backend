@@ -45,11 +45,13 @@ Route::post('/users/login', [UserController::class, 'login']);
 // Route::middleware('auth:sanctum')->group(function () {
 //     Route::get('users/refresh-token', [UserController::class, 'refreshToken']);
 // });
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', 'single.session'])->group(function () {
     Route::get('/user', function (Request $request) {
         return $request->user();
     });
 });
+
+Route::post('/users/force-logout', [UserController::class, 'forceLogout']);
 
 // User Routes
 Route::middleware('auth:sanctum')->group(function () {

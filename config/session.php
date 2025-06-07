@@ -155,7 +155,7 @@ return [
     |
     */
 
-    'domain' => env('SESSION_DOMAIN', '.petra.ac.id'),
+    'domain' => env('SESSION_DOMAIN', '.blc.works'),
 
     /*
     |--------------------------------------------------------------------------

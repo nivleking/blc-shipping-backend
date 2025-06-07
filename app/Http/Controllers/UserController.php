@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Room;
 use App\Models\User;
+use App\Models\UserSession;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -99,12 +100,9 @@ class UserController extends Controller
             'password' => 'required'
         ]);
 
-        $user = User::where('name', $request->name)->first();
+        $user = User::where('name', $validated['name'])->first();
 
-        if (
-            !$user ||
-            !Hash::check($request->password, $user->password)
-        ) {
+        if (!$user || !Hash::check($validated['password'], $user->password)) {
             return response()->json([
                 'errors' => [
                     'name' => [
@@ -114,28 +112,46 @@ class UserController extends Controller
             ], 401);
         }
 
-        $accessToken = $user->createToken(
-            'access_token',
-            ['access-api'],
-            Carbon::now()->addMinutes(config('sanctum.ac_expiration'))
-        );
-        $refreshToken = $user->createToken(
-            'refresh_token',
-            ['issue-access-token'],
-            Carbon::now()->addMinutes(config('sanctum.rt_expiration'))
+        // Check if user has existing sessions
+        $existingSession = UserSession::where('user_id', $user->id)
+            ->where('session_id', '!=', session()->getId())
+            ->first();
+
+        if ($existingSession) {
+            // Return response with details about existing session
+            return response()->json([
+                'message' => 'You are already logged in on another device',
+                'active_session' => [
+                    'ip' => $existingSession->ip_address,
+                    'user_agent' => $existingSession->user_agent,
+                    'last_active' => $existingSession->last_active_at->diffForHumans(),
+                ],
+                'force_logout_allowed' => true,
+            ], 409); // 409 Conflict
+        }
+
+        // Create new access token
+        $accessToken = $user->createToken('auth_token')->plainTextToken;
+
+        // Create/update session record
+        UserSession::updateOrCreate(
+            ['user_id' => $user->id],
+            [
+                'session_id' => session()->getId(),
+                'ip_address' => $request->ip(),
+                'user_agent' => substr($request->userAgent() ?? '', 0, 255),
+                'last_active_at' => now(),
+            ]
         );
 
+        // Update user status
         $user->update([
-            'last_login_at' => now(),
-            'last_login_ip' => $request->ip(),
-            'login_count' => $user->login_count + 1,
             'status' => 'active'
         ]);
 
         return response()->json([
-            'is_admin' => $user->is_admin,
-            'token' => $accessToken->plainTextToken,
-            'refresh_token' => $refreshToken->plainTextToken,
+            'token' => $accessToken,
+            'is_admin' => $user->is_admin
         ], 200);
     }
 
@@ -351,6 +367,47 @@ class UserController extends Controller
 
         return response()->json([
             'rooms' => $rooms
+        ]);
+    }
+
+    public function forceLogout(Request $request)
+    {
+        $validated = $request->validate([
+            'name' => 'required|exists:users',
+            'password' => 'required',
+        ]);
+
+        $user = User::where('name', $validated['name'])->first();
+
+        if (!$user || !Hash::check($validated['password'], $user->password)) {
+            return response()->json([
+                'errors' => [
+                    'name' => [
+                        'The provided credentials are incorrect.',
+                    ]
+                ]
+            ], 401);
+        }
+
+        // Delete all existing sessions for this user
+        UserSession::where('user_id', $user->id)->delete();
+
+        // Create new token
+        $accessToken = $user->createToken('auth_token')->plainTextToken;
+
+        // Create new session record
+        UserSession::create([
+            'user_id' => $user->id,
+            'session_id' => session()->getId(),
+            'ip_address' => $request->ip(),
+            'user_agent' => substr($request->userAgent() ?? '', 0, 255),
+            'last_active_at' => now(),
+        ]);
+
+        return response()->json([
+            'message' => 'Successfully logged in. All other sessions were terminated.',
+            'token' => $accessToken,
+            'is_admin' => $user->is_admin
         ]);
     }
 }

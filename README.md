@@ -1,66 +1,88 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# BLC Shipping Simulation
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+A comprehensive web-based simulation system for maritime container logistics management.
 
-## About Laravel
+## Overview
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+BLC Shipping is an interactive educational platform designed to simulate container logistics operations in shipping. The application transforms a previously manual simulation into a digital experience, enabling participants to learn about stowage planning, revenue optimization, and logistics decision-making in a realistic yet engaging environment.
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Documentation
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+Before trying the application, we recommend reviewing the comprehensive manual book that covers all features and functionality:
 
-## Learning Laravel
+[![Manual Book](https://img.shields.io/badge/Manual_Book-PDF-blue?style=for-the-badge&logo=googledrive)](https://drive.google.com/file/d/1pgHojlFPUHrjyinyZLxF57wJvdyGX4A4/view?usp=sharing)
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+The manual book includes:
+- Detailed explanations of the simulation concept
+- Step-by-step guides for both admin and participant roles
+- Instructions for setting up and managing simulation rooms
+- Tutorial for container stowage planning
+- Guide to understanding weekly performance metrics
+- Troubleshooting common issues
 
-You may also try the [Laravel Bootcamp](https://bootcamp.laravel.com), where you will be guided through building a modern Laravel application from scratch.
+**Note**: We strongly recommend reading through the manual book before attempting to deploy or use the application for the first time.
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+## Features
 
-## Laravel Sponsors
+- **Interactive Container Management**: Drag-and-drop interface for stowage planning with real-time feedback
+- **Multi-User Simultaneous Simulations**: Support for multiple concurrent simulation rooms
+- **Gamified Learning Approach**: Score tracking, leaderboards, and competitive elements
+- **Real-Time Updates**: WebSocket implementation for live interactions between participants
+- **3D Visualization**: Three.js powered ship layout visualization for enhanced understanding
+- **Performance Analytics**: Weekly performance tracking with detailed metrics
+- **Role-Based Access**: Separate interfaces for administrators and participants
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+## Technology Stack
 
-### Premium Partners
+### Frontend
+- React.js with Vite
+- TailwindCSS for styling
+- React Query for data fetching
+- DnD Kit for drag-and-drop functionality
+- Three.js for 3D visualizations
+- Socket.IO client for real-time communication
 
-- **[Vehikl](https://vehikl.com/)**
-- **[Tighten Co.](https://tighten.co)**
-- **[WebReinvent](https://webreinvent.com/)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel/)**
-- **[Cyber-Duck](https://cyber-duck.co.uk)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Jump24](https://jump24.co.uk)**
-- **[Redberry](https://redberry.international/laravel/)**
-- **[Active Logic](https://activelogic.com)**
-- **[byte5](https://byte5.de)**
-- **[OP.GG](https://op.gg)**
+### Backend
+- Laravel 10 PHP framework
+- MySQL database
+- Redis for caching and performance optimization
+- Laravel Sanctum for authentication
+- WebSocket server with Socket.IO
 
-## Contributing
+### Deployment
+- Docker containerization
+- Cloudflare Tunnel for secure public access
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+## Installation
 
-## Code of Conduct
+### Prerequisites
+- Docker and Docker Compose
+- Node.js and npm/yarn (for development)
+- Composer (for development)
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+### Setup
 
-## Security Vulnerabilities
-
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
-
-## License
-
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+1. Clone the repository
+   ```bash
+   git clone https://github.com/yourusername/blc-shipping.git
+   cd blc-shipping
+   ```
+2. Configure environment variables
+   ```cp .env.example .env
+   cp frontend-blc-shipping/.env.example frontend-blc-shipping/.env
+   cp blc-shipping-backend/.env.example blc-shipping-backend/.env
+   cp websockets-blc-shipping/.env.example websockets-blc-shipping/.env
+   ```
+3. Update environment variables with your specific settings
+4. Start the Docker containers
+   ```
+   docker-compose up -d
+   ```
+5. Set up the database
+   ```
+   docker-compose exec backend php artisan migrate --seed
+   ```
+6. Generate application key
+   ```
+   docker-compose exec backend php artisan key:generate
+   ```

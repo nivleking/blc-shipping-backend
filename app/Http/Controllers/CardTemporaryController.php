@@ -154,8 +154,8 @@ class CardTemporaryController extends Controller
             ], 404);
         }
 
-        // Use a direct join instead of relationship loading
-        $cardTemporaries = CardTemporary::select(
+        // Back log cards
+        $backlogCards = CardTemporary::select(
             'card_temporaries.*',
             'cards.type',
             'cards.priority',
@@ -172,48 +172,72 @@ class CardTemporaryController extends Controller
                 'card_temporaries.room_id' => $roomId,
                 'card_temporaries.user_id' => $userId,
                 'card_temporaries.status' => 'selected',
+                'card_temporaries.is_backlog' => true
             ])
-            ->where(function ($query) use ($currentRound) {
-                $query->where('card_temporaries.round', $currentRound)
-                    ->orWhere('card_temporaries.is_backlog', true);
+            ->orderByRaw("CASE WHEN cards.priority = 'Committed' THEN 1 ELSE 2 END")
+            ->get();
+
+        // Use a direct join instead of relationship loading
+        $currentRoundCards = CardTemporary::select(
+            'card_temporaries.*',
+            'cards.type',
+            'cards.priority',
+            'cards.origin',
+            'cards.destination',
+            'cards.quantity',
+            'cards.revenue'
+        )
+            ->join('cards', function ($join) {
+                $join->on('cards.id', '=', 'card_temporaries.card_id')
+                    ->on('cards.deck_id', '=', 'card_temporaries.deck_id');
             })
-            ->orderByRaw('card_temporaries.is_backlog DESC')
+            ->where([
+                'card_temporaries.room_id' => $roomId,
+                'card_temporaries.user_id' => $userId,
+                'card_temporaries.status' => 'selected',
+                'card_temporaries.round' => $currentRound,
+                'card_temporaries.is_backlog' => false
+            ])
             ->orderByRaw("CASE WHEN cards.priority = 'Committed' THEN 1 ELSE 2 END")
             ->orderByRaw("LENGTH(card_temporaries.card_id) ASC") // Sort by card ID length first
             // THIS IS FOR PRODUCTION
             ->orderByRaw("REGEXP_REPLACE(card_temporaries.card_id, '^(\\d)(\\d+)(\\d{2})$', '\\1\\2') + 0") // Then by port+week
             // THIS IS FOR LOCAL
             // ->orderByRaw("SUBSTRING_INDEX(card_temporaries.card_id, RIGHT(card_temporaries.card_id, 2), 1) + 0") // Then by port+week
-            ->orderByRaw("RIGHT(card_temporaries.card_id, 2) + 0") // Then by card number
+            ->orderByRaw("RIGHT(card_temporaries.card_id, 2) + 0")
+            ->take($room->cards_limit_per_round)
             ->get();
 
         // Format the result to match what the frontend expects
-        $formattedResult = $cardTemporaries->map(function ($temp) {
-            $temp->card = [
-                'id' => $temp->card_id,
-                'type' => $temp->type,
-                'priority' => $temp->priority,
-                'origin' => $temp->origin,
-                'destination' => $temp->destination,
-                'quantity' => $temp->quantity,
-                'revenue' => $temp->revenue,
-            ];
+        $formatCardCollection = function ($collection) {
+            return $collection->map(function ($temp) {
+                $temp->card = [
+                    'id' => $temp->card_id,
+                    'type' => $temp->type,
+                    'priority' => $temp->priority,
+                    'origin' => $temp->origin,
+                    'destination' => $temp->destination,
+                    'quantity' => $temp->quantity,
+                    'revenue' => $temp->revenue,
+                ];
 
-            unset($temp->type);
-            unset($temp->priority);
-            unset($temp->origin);
-            unset($temp->destination);
-            unset($temp->quantity);
-            unset($temp->revenue);
+                unset($temp->type);
+                unset($temp->priority);
+                unset($temp->origin);
+                unset($temp->destination);
+                unset($temp->quantity);
+                unset($temp->revenue);
 
-            return $temp;
-        });
+                return $temp;
+            });
+        };
 
-        // Apply card limit (keeping existing logic)
-        $cardsLimit = $room->cards_limit_per_round;
-        if ($formattedResult->count() > $cardsLimit) {
-            $formattedResult = $formattedResult->take($cardsLimit);
-        }
+        // Format two collections
+        $formattedBacklogCards = $formatCardCollection($backlogCards);
+        $formattedCurrentRoundCards = $formatCardCollection($currentRoundCards);
+
+        // Concat its results
+        $formattedResult = $formattedBacklogCards->concat($formattedCurrentRoundCards);
 
         // Check if card limit is exceeded
         $isLimitExceeded = $shipBay->processed_cards >= $room->cards_must_process_per_round ||
@@ -229,7 +253,7 @@ class CardTemporaryController extends Controller
             "deck_id" => $room->deck_id,
             "move_cost" => $room->move_cost,
             "cards_must_process_per_round" => $room->cards_must_process_per_round,
-            "cards_limit_per_round" => $cardsLimit,
+            "cards_limit_per_round" => $room->cards_limit_per_round,
             "port" => $shipBay->port,
             "is_limit_exceeded" => $isLimitExceeded,
             "current_round" => $currentRound,

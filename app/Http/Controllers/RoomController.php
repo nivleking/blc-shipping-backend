@@ -1506,21 +1506,22 @@ class RoomController extends Controller
             ->limit(($cardsMustProcess - $processedCount))
             ->get();
 
-        $rejectedNonCommittedCards = CardTemporary::join('cards', function ($join) {
-            $join->on('cards.id', '=', 'card_temporaries.card_id')
-                ->on('cards.deck_id', '=', 'card_temporaries.deck_id');
-        })
-            ->where([
-                'card_temporaries.user_id' => $userId,
-                'card_temporaries.room_id' => $room->id,
-                'card_temporaries.status' => 'rejected',
-                'card_temporaries.round' => $currentRound,
-            ])
-            ->where('cards.priority', '!=', 'Committed') // Hanya kartu non-committed
-            ->select('card_temporaries.*', 'cards.type', 'cards.priority', 'cards.quantity', 'cards.revenue')
-            ->get();
+        // $rejectedNonCommittedCards = CardTemporary::join('cards', function ($join) {
+        //     $join->on('cards.id', '=', 'card_temporaries.card_id')
+        //         ->on('cards.deck_id', '=', 'card_temporaries.deck_id');
+        // })
+        //     ->where([
+        //         'card_temporaries.user_id' => $userId,
+        //         'card_temporaries.room_id' => $room->id,
+        //         'card_temporaries.status' => 'rejected',
+        //         'card_temporaries.round' => $currentRound,
+        //     ])
+        //     ->where('cards.priority', '!=', 'Committed') // Hanya kartu non-committed
+        //     ->select('card_temporaries.*', 'cards.type', 'cards.priority', 'cards.quantity', 'cards.revenue')
+        //     ->get();
 
-        $allPenalizedCards = $unprocessedCards->concat($rejectedNonCommittedCards);
+        $allPenalizedCards = $unprocessedCards;
+        // ->concat($rejectedNonCommittedCards);
 
         if ($allPenalizedCards->isEmpty()) {
             return [

@@ -776,6 +776,11 @@ class ShipBayController extends Controller
             'count' => 'required|integer|min:1',
             'bay_index' => 'required|integer|min:0',
             'container_id' => 'sometimes|exists:containers,id',
+            'create_log' => 'sometimes|boolean',
+            'batch_moves' => 'sometimes|array',
+            'batch_moves.*.container_id' => 'sometimes|string',
+            'batch_moves.*.from' => 'sometimes|string',
+            'batch_moves.*.to' => 'sometimes|string',
             'arena' => 'sometimes|array',
         ]);
 
@@ -788,6 +793,127 @@ class ShipBayController extends Controller
         }
 
         $room = Room::find($roomId);
+        $moveCost = $room->move_cost;
+
+        // Handle batch moves if provided - this is the "Discharge All" feature
+        if (isset($validatedData['batch_moves']) && !empty($validatedData['batch_moves'])) {
+            // Check for restowage issues if this is a batch discharge
+            if ($validatedData['move_type'] === 'discharge') {
+                $restowageDetails = $this->roomController->calculateRestowagePenalties($room, $userId);
+
+                // If there are restowage issues, prevent the "Discharge All" operation
+                if (isset($restowageDetails['move_details']) && count($restowageDetails['move_details']) > 0) {
+                    return response()->json([
+                        'error' => 'Cannot discharge all containers while there are restowage issues',
+                        'restowage_error' => true,
+                        'message' => 'Please fix restowage issues before using Discharge All.',
+                        'move_details' => $restowageDetails['move_details']
+                    ], 400);
+                }
+            }
+
+            $movedContainers = [];
+            $totalMoves = count($validatedData['batch_moves']);
+
+            // Process each container move in the batch
+            $arenaData = json_decode($shipBay->arena, true);
+
+            foreach ($validatedData['batch_moves'] as $move) {
+                $containerId = $move['container_id'];
+                $fromPosition = $move['from'];
+                $toPosition = $move['to'];
+
+                // Check if this is a discharge move (from bay to dock)
+                $isDischargeMove = strpos($fromPosition, 'bay-') === 0 && strpos($toPosition, 'docks-') === 0;
+
+                if ($isDischargeMove && $validatedData['move_type'] === 'discharge') {
+                    // Remove container from bay arena when discharged
+                    if (isset($arenaData['containers']) && is_array($arenaData['containers'])) {
+                        // Find and remove the container from bay arena
+                        $arenaData['containers'] = array_filter($arenaData['containers'], function ($container) use ($containerId) {
+                            return $container['id'] != $containerId;
+                        });
+
+                        // Re-index array to maintain sequential numeric keys
+                        $arenaData['containers'] = array_values($arenaData['containers']);
+
+                        // Update total containers count
+                        if (isset($arenaData['totalContainers'])) {
+                            $arenaData['totalContainers'] = count($arenaData['containers']);
+                        }
+                    }
+                }
+
+                $movedContainers[] = $containerId;
+            }
+
+            // Update shipBay arena with modified data
+            $shipBay->arena = json_encode($arenaData);
+
+            // Update move counters
+            if ($validatedData['move_type'] === 'discharge') {
+                $shipBay->discharge_moves += $totalMoves;
+            } else {
+                $shipBay->load_moves += $totalMoves;
+            }
+
+            // Update bay-specific move counters
+            $bayMoves = json_decode($shipBay->bay_moves ?? '{}', true);
+            if (!isset($bayMoves[$validatedData['bay_index']])) {
+                $bayMoves[$validatedData['bay_index']] = [
+                    'discharge_moves' => 0,
+                    'load_moves' => 0
+                ];
+            }
+
+            if ($validatedData['move_type'] === 'discharge') {
+                $bayMoves[$validatedData['bay_index']]['discharge_moves'] += $totalMoves;
+            } else {
+                $bayMoves[$validatedData['bay_index']]['load_moves'] += $totalMoves;
+            }
+
+            // Calculate penalty
+            $movePenalty = $totalMoves * $moveCost;
+            $shipBay->bay_moves = json_encode($bayMoves);
+            $shipBay->penalty += $movePenalty;
+            $shipBay->total_revenue = $shipBay->revenue - $shipBay->penalty;
+            $shipBay->save();
+
+            // Create simulation log for batch moves (discharge all)
+            if (isset($validatedData['create_log']) && $validatedData['create_log'] === true) {
+                // Get fresh ship bay and dock data after the batch update
+                $updatedShipBay = ShipBay::where('room_id', $roomId)
+                    ->where('user_id', $userId)
+                    ->first();
+
+                $shipDock = ShipDock::where('room_id', $roomId)
+                    ->where('user_id', $userId)
+                    ->first();
+
+                if ($updatedShipBay && $shipDock) {
+                    $logData = [
+                        'user_id' => $userId,
+                        'room_id' => $roomId,
+                        'arena_bay' => $updatedShipBay->arena,
+                        'arena_dock' => $shipDock->arena,
+                        'port' => $updatedShipBay->port,
+                        'section' => $updatedShipBay->section,
+                        'round' => $updatedShipBay->current_round,
+                        'revenue' => $updatedShipBay->revenue ?? 0,
+                        'penalty' => $updatedShipBay->penalty ?? 0,
+                        'total_revenue' => $updatedShipBay->total_revenue,
+                    ];
+
+                    $this->simulationLogController->createLogEntry($logData);
+                }
+            }
+
+            return response()->json([
+                'moved_containers' => $movedContainers,
+                'total_moves' => $totalMoves,
+                'total_penalty' => $movePenalty
+            ]);
+        }
 
         // ======= PHASE 1: CAPTURE COMPLETE PREVIOUS STATE =======
         $previousRestowageData = $this->roomController->calculateRestowagePenalties($room, $userId);

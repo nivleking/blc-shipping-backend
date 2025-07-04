@@ -121,7 +121,7 @@ Route::middleware(['auth:sanctum', 'room.access'])->group(function () {
     Route::get('/rooms/{room}/users', [RoomController::class, 'getRoomUsers'])->middleware('auth:sanctum');
     Route::put('/rooms/{room}/set-ports', [RoomController::class, 'setPorts'])->middleware('auth:sanctum', 'admin');
     Route::get('/rooms/{room}/user-port', [RoomController::class, 'getUserPortsV1'])->middleware('auth:sanctum');
-    Route::get('/rooms/{room}/rankings', [RoomController::class, 'getUsersRanking'])->middleware('auth:sanctum', 'admin');
+    Route::get('/rooms/{room}/rankings', [RoomController::class, 'getUsersRanking'])->middleware('auth:sanctum');
     Route::put('/rooms/{room}/swap-config', [RoomController::class, 'updateSwapConfig'])->middleware('auth:sanctum', 'admin');
     Route::get('/rooms/{roomId}/port-sequence/{port}', [RoomController::class, 'getProperStackingOrder']);
     Route::get('/rooms/{roomId}/restowage-status', [RoomController::class, 'getRestowageStatus'])->middleware('auth:sanctum');

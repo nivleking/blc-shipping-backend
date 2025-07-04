@@ -2503,6 +2503,9 @@ class RoomController extends Controller
                 $user = User::find($shipBay->user_id);
                 if (!$user) continue;
 
+                // Generate the port color directly here
+                $port_color = $this->generateContainerColor($shipBay->port);
+
                 $rankings[] = [
                     'user_id' => $shipBay->user_id,
                     'user_name' => $user->name,
@@ -2516,6 +2519,7 @@ class RoomController extends Controller
                     'load_moves' => $shipBay->load_moves,
                     'accepted_cards' => $shipBay->accepted_cards,
                     'rejected_cards' => $shipBay->rejected_cards,
+                    'port_color' => $port_color // Add port color as a named field
                     // 'extra_moves_penalty' => $shipBay->extra_moves_penalty,
                     // 'long_crane_moves' => $shipBay->long_crane_moves,
                     // 'extra_moves_on_long_crane' => $shipBay->extra_moves_on_long_crane

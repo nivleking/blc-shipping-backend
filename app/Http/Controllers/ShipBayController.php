@@ -1220,6 +1220,7 @@ class ShipBayController extends Controller
             'port' => 'sometimes|required|string',
             'dock_arena' => 'sometimes|required|array',
             'dock_size' => 'sometimes|required|array',
+            'is_backlog' => 'sometimes|boolean',
         ]);
 
         $shipBay = ShipBay::where('room_id', $roomId)
@@ -1230,11 +1231,16 @@ class ShipBayController extends Controller
 
         if ($validatedData['card_action'] === 'accept') {
             $shipBay->increment('accepted_cards', $validatedData['count']);
-            $shipBay->increment('processed_cards', $validatedData['count']);
+            if (!($validatedData['is_backlog'] ?? false)) {
+                $shipBay->increment('processed_cards', $validatedData['count']);
+            }
         } else {
             $shipBay->increment('rejected_cards', $validatedData['count']);
         }
-        $shipBay->increment('current_round_cards');
+
+        if (!($validatedData['is_backlog'] ?? false)) {
+            $shipBay->increment('current_round_cards');
+        }
 
         $totalProcessed = $shipBay->accepted_cards + $shipBay->rejected_cards;
         $isLimitExceeded = $totalProcessed >= $room->cards_limit_per_round;
